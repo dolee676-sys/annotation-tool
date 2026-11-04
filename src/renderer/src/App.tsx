@@ -1,0 +1,1643 @@
+import DOMPurify from 'dompurify'
+import { marked } from 'marked'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type {
+  AppEntry,
+  AppState,
+  HistoryRecord,
+  ProviderKind,
+  ProviderPatch,
+  ProviderView,
+  SettingsPatch,
+  UsageSummary
+} from '../../shared/types'
+import { DEFAULT_PROMPT } from '../../shared/types'
+import { PROVIDER_PRESETS, isLocalAddress, presetById } from '../../shared/presets'
+import { formatCny } from '../../shared/pricing'
+
+marked.setOptions({ gfm: true, breaks: true })
+
+type Tab = 'apps' | 'models' | 'prompt' | 'history' | 'usage' | 'about'
+
+interface TestState {
+  loading?: boolean
+  ok?: boolean
+  error?: string
+  models?: number
+}
+
+interface EditorState {
+  id?: string
+  name: string
+  kind: ProviderKind
+  baseUrl: string
+  apiKey: string
+  priceIn: number
+  priceOut: number
+}
+
+interface AppRow {
+  key: string
+  processName: string
+  label: string
+  running: boolean
+  installed: boolean
+  count: number
+  lastSeen: number
+  title?: string
+}
+
+const NAV: Array<{ id: Tab; label: string; icon: string }> = [
+  { id: 'apps', label: '应用范围', icon: 'apps' },
+  { id: 'models', label: '模型服务', icon: 'chip' },
+  { id: 'prompt', label: '注解提示词', icon: 'text' },
+  { id: 'history', label: '历史记录', icon: 'clock' },
+  { id: 'usage', label: '用量统计', icon: 'bars' },
+  { id: 'about', label: '关于', icon: 'info' }
+]
+
+function Icon({ name }: { name: string }): JSX.Element {
+  const paths: Record<string, JSX.Element> = {
+    apps: (
+      <>
+        <rect x="3" y="3" width="7" height="7" rx="1.6" />
+        <rect x="14" y="3" width="7" height="7" rx="1.6" />
+        <rect x="3" y="14" width="7" height="7" rx="1.6" />
+        <rect x="14" y="14" width="7" height="7" rx="1.6" />
+      </>
+    ),
+    chip: (
+      <>
+        <rect x="5" y="5" width="14" height="14" rx="3" />
+        <path d="M9 9h6M9 12h6M9 15h3" />
+      </>
+    ),
+    text: (
+      <>
+        <path d="M4 6h16M4 11h12M4 16h15M4 21h8" />
+      </>
+    ),
+    bars: (
+      <>
+        <path d="M4 20V10M10 20V4M16 20v-7M22 20v-4" />
+      </>
+    ),
+    info: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 10v6M12 7.2v.2" />
+      </>
+    ),
+    clock: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3.5 2" />
+      </>
+    )
+  }
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+      {paths[name] ?? paths.info}
+    </svg>
+  )
+}
+
+const fmtNum = (n: number): string => n.toLocaleString('zh-CN')
+
+const fmtTime = (ts: number): string =>
+  new Date(ts).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+const normalizeAppName = (value: string): string =>
+  value.trim().toLowerCase().replace(/\.exe$/i, '')
+
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts
+  const minutes = Math.floor(diff / 60000)
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes} 分钟前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} 小时前`
+  return `${Math.floor(hours / 24)} 天前`
+}
+
+export function App(): JSX.Element {
+  const [state, setState] = useState<AppState | null>(null)
+  const [usage, setUsage] = useState<UsageSummary | null>(null)
+  const [tab, setTab] = useState<Tab>('apps')
+  const [toast, setToast] = useState('')
+  const [appInput, setAppInput] = useState('')
+  const [promptDraft, setPromptDraft] = useState('')
+  const [promptDirty, setPromptDirty] = useState(false)
+  const [tests, setTests] = useState<Record<string, TestState>>({})
+  const [editor, setEditor] = useState<EditorState | null>(null)
+  const [savingProvider, setSavingProvider] = useState(false)
+  const [selectedPresetId, setSelectedPresetId] = useState('')
+  const [presetInitialized, setPresetInitialized] = useState(false)
+  const [keyDraft, setKeyDraft] = useState('')
+  const [modelDraft, setModelDraft] = useState('')
+  const [presetBusy, setPresetBusy] = useState(false)
+  const [presetNotice, setPresetNotice] = useState<{ ok: boolean; message: string } | null>(null)
+  const [apps, setApps] = useState<AppEntry[] | null>(null)
+  const [appsLoading, setAppsLoading] = useState(false)
+  const [appsError, setAppsError] = useState('')
+  const [appQuery, setAppQuery] = useState('')
+  const [historyItems, setHistoryItems] = useState<HistoryRecord[] | null>(null)
+  const [historyQuery, setHistoryQuery] = useState('')
+  const [selectedHistoryId, setSelectedHistoryId] = useState('')
+
+  const flash = useCallback((message: string) => {
+    setToast(message)
+    setTimeout(() => setToast(''), 2200)
+  }, [])
+
+  const refreshUsage = useCallback(async () => {
+    setUsage(await window.zhujie.getUsage())
+  }, [])
+
+  const loadApps = useCallback(async (force = false) => {
+    setAppsLoading(true)
+    setAppsError('')
+    try {
+      setApps(await window.zhujie.listApps(force))
+    } catch (error) {
+      setAppsError(error instanceof Error ? error.message : '扫描应用失败')
+    } finally {
+      setAppsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (tab === 'apps' && apps === null) void loadApps()
+  }, [tab, apps, loadApps])
+
+  const loadHistory = useCallback(async () => {
+    const items = await window.zhujie.listHistory()
+    setHistoryItems(items)
+    setSelectedHistoryId((prev) => (items.some((item) => item.id === prev) ? prev : items[0]?.id ?? ''))
+  }, [])
+
+  useEffect(() => {
+    if (tab === 'history' && historyItems === null) void loadHistory()
+  }, [tab, historyItems, loadHistory])
+
+  useEffect(() => window.zhujie.on('history:changed', () => void loadHistory()), [loadHistory])
+
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      const [next, nextUsage] = await Promise.all([window.zhujie.getState(), window.zhujie.getUsage()])
+      if (!alive) return
+      setState(next)
+      setUsage(nextUsage)
+      setPromptDraft(next.settings.prompt)
+    })()
+    const offState = window.zhujie.on('state:changed', (next: AppState) => setState(next))
+    const offUsage = window.zhujie.on('usage:changed', () => void refreshUsage())
+    return () => {
+      alive = false
+      offState()
+      offUsage()
+    }
+  }, [refreshUsage])
+
+  useEffect(() => {
+    if (state && !promptDirty) setPromptDraft(state.settings.prompt)
+  }, [state, promptDirty])
+
+  const patch = async (next: SettingsPatch, note?: string): Promise<void> => {
+    const updated = await window.zhujie.updateSettings(next)
+    setState(updated)
+    if (note) flash(note)
+  }
+
+  const addApp = (): void => {
+    if (!state) return
+    const name = appInput.trim()
+    if (!name) return
+    if (state.settings.whitelist.includes(name)) {
+      flash('已在列表中')
+      return
+    }
+    void patch({ whitelist: [...state.settings.whitelist, name] }, `已加入：${name}`)
+    setAppInput('')
+  }
+
+  const savePrompt = async (): Promise<void> => {
+    await patch({ prompt: promptDraft }, '提示词已保存')
+    setPromptDirty(false)
+  }
+
+  const saveProvider = async (): Promise<void> => {
+    if (!editor) return
+    if (!editor.baseUrl.trim()) {
+      flash('请填写 Base URL')
+      return
+    }
+    setSavingProvider(true)
+    try {
+      const payload: ProviderPatch = {
+        id: editor.id,
+        name: editor.name || '自定义服务',
+        kind: editor.kind,
+        baseUrl: editor.baseUrl,
+        apiKey: editor.apiKey.trim() ? editor.apiKey.trim() : undefined,
+        priceIn: editor.priceIn,
+        priceOut: editor.priceOut
+      }
+      const updated = await window.zhujie.saveProvider(payload)
+      setState(updated)
+      setEditor(null)
+      flash('模型服务已保存')
+    } catch (error) {
+      flash(error instanceof Error ? error.message : '保存失败')
+    } finally {
+      setSavingProvider(false)
+    }
+  }
+
+  const testProvider = async (id: string): Promise<void> => {
+    setTests((prev) => ({ ...prev, [id]: { loading: true } }))
+    const result = await window.zhujie.testProvider(id)
+    setTests((prev) => ({
+      ...prev,
+      [id]: { ok: result.ok, error: result.error, models: result.models.length }
+    }))
+    if (result.ok) {
+      setState(await window.zhujie.getState())
+      flash(`连接成功，发现 ${result.models.length} 个模型`)
+    }
+  }
+
+  const clearUsage = async (): Promise<void> => {
+    if (!window.confirm('确定清空本机用量记录？此操作不可恢复。')) return
+    setUsage(await window.zhujie.clearUsage())
+    flash('用量记录已清空')
+  }
+
+  const removeHistory = async (id: string): Promise<void> => {
+    const items = await window.zhujie.deleteHistory(id)
+    setHistoryItems(items)
+    setSelectedHistoryId(items[0]?.id ?? '')
+    flash('历史记录已删除')
+  }
+
+  const clearHistory = async (): Promise<void> => {
+    if (!window.confirm('清空全部历史记录？此操作不可恢复。')) return
+    const items = await window.zhujie.clearHistory()
+    setHistoryItems(items)
+    setSelectedHistoryId('')
+    flash('历史记录已清空')
+  }
+
+  const modelOptions = useMemo(() => {
+    const list: Array<{ providerId: string; providerName: string; model: string }> = []
+    for (const provider of state?.providers ?? []) {
+      if (!isLocalAddress(provider.baseUrl) && !provider.hasKey) continue
+      for (const model of provider.models) {
+        list.push({ providerId: provider.id, providerName: provider.name, model })
+      }
+    }
+    return list
+  }, [state])
+
+  const selectPreset = useCallback((presetId: string, source: AppState) => {
+    const preset = presetById(presetId)
+    const provider = source.providers.find((item) => (item.presetId ?? item.id) === presetId)
+    setSelectedPresetId(presetId)
+    setKeyDraft('')
+    setPresetNotice(null)
+    const preferred =
+      provider && provider.id === source.settings.defaultProviderId && source.settings.defaultModel
+        ? source.settings.defaultModel
+        : provider?.models[0] ?? preset?.models[0] ?? ''
+    setModelDraft(preferred)
+  }, [])
+
+  useEffect(() => {
+    if (!state || presetInitialized) return
+    const current = state.providers.find((provider) => provider.id === state.settings.defaultProviderId)
+    const currentPresetId = current?.presetId ?? current?.id ?? ''
+    const fallback = PROVIDER_PRESETS.find((preset) => preset.local === state.settings.localOnly)
+    const pick = PROVIDER_PRESETS.some((preset) => preset.id === currentPresetId)
+      ? currentPresetId
+      : fallback?.id
+    if (pick) selectPreset(pick, state)
+    setPresetInitialized(true)
+  }, [state, presetInitialized, selectPreset])
+
+  const appRows = useMemo(() => {
+    const map = new Map<string, AppRow>()
+    for (const entry of apps ?? []) {
+      const key = normalizeAppName(entry.processName)
+      map.set(key, {
+        key,
+        processName: entry.processName,
+        label: entry.name,
+        running: entry.running,
+        installed: entry.installed,
+        count: 0,
+        lastSeen: 0,
+        title: entry.title
+      })
+    }
+    for (const detected of state?.settings.detectedApps ?? []) {
+      const key = normalizeAppName(detected.name)
+      const existing = map.get(key)
+      if (existing) {
+        existing.count = detected.count
+        existing.lastSeen = detected.lastSeen
+      } else {
+        map.set(key, {
+          key,
+          processName: detected.name.endsWith('.exe') ? detected.name : `${detected.name}.exe`,
+          label: detected.name.replace(/\.exe$/i, ''),
+          running: false,
+          installed: false,
+          count: detected.count,
+          lastSeen: detected.lastSeen
+        })
+      }
+    }
+    for (const name of state?.settings.whitelist ?? []) {
+      const key = normalizeAppName(name)
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          processName: name,
+          label: name.replace(/\.exe$/i, ''),
+          running: false,
+          installed: false,
+          count: 0,
+          lastSeen: 0
+        })
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.running !== b.running) return a.running ? -1 : 1
+      if (a.count !== b.count) return b.count - a.count
+      return a.label.localeCompare(b.label, 'zh-CN')
+    })
+  }, [apps, state?.settings.detectedApps, state?.settings.whitelist])
+
+  const visibleAppRows = useMemo(() => {
+    const query = appQuery.trim().toLowerCase()
+    if (!query) return appRows
+    return appRows.filter(
+      (row) =>
+        row.label.toLowerCase().includes(query) ||
+        row.processName.toLowerCase().includes(query) ||
+        (row.title ?? '').toLowerCase().includes(query)
+    )
+  }, [appRows, appQuery])
+
+  const filteredHistory = useMemo(() => {
+    const list = historyItems ?? []
+    const query = historyQuery.trim().toLowerCase()
+    if (!query) return list
+    return list.filter(
+      (record) =>
+        record.text.toLowerCase().includes(query) ||
+        (record.question ?? '').toLowerCase().includes(query) ||
+        record.answer.toLowerCase().includes(query) ||
+        record.programName.toLowerCase().includes(query) ||
+        record.model.toLowerCase().includes(query)
+    )
+  }, [historyItems, historyQuery])
+
+  const selectedHistory = useMemo(
+    () => filteredHistory.find((record) => record.id === selectedHistoryId) ?? filteredHistory[0] ?? null,
+    [filteredHistory, selectedHistoryId]
+  )
+
+  const historyHtml = useMemo(() => {
+    if (!selectedHistory) return ''
+    return DOMPurify.sanitize(marked.parse(selectedHistory.answer) as string)
+  }, [selectedHistory])
+
+  if (!state) {
+    return <div className="boot">正在读取本机配置…</div>
+  }
+
+  const settings = state.settings
+  const runningCount = apps?.filter((app) => app.running).length ?? 0
+  const isRowWhitelisted = (key: string): boolean =>
+    settings.whitelist.some((item) => normalizeAppName(item) === key)
+  const toggleAppRow = (row: AppRow): void => {
+    const exists = isRowWhitelisted(row.key)
+    const next = exists
+      ? settings.whitelist.filter((item) => normalizeAppName(item) !== row.key)
+      : [...settings.whitelist, row.processName]
+    void patch({ whitelist: next }, exists ? `已移出：${row.label}` : `已加入：${row.label}`)
+  }
+  const visiblePresets = PROVIDER_PRESETS.filter((preset) => preset.local === settings.localOnly)
+  const activePreset = presetById(selectedPresetId)
+  const activeProvider =
+    state.providers.find((provider) => (provider.presetId ?? provider.id) === selectedPresetId) ?? null
+  const activeChoices = Array.from(
+    new Set([...(activeProvider?.models ?? []), ...(activePreset?.models ?? [])])
+  )
+  const activeProviderInfo = state.providers.find(
+    (provider) => provider.id === settings.defaultProviderId
+  )
+  const activePresetInfo = activeProviderInfo
+    ? presetById(activeProviderInfo.presetId ?? '')
+    : undefined
+  const activeLabel = activePresetInfo?.name ?? activeProviderInfo?.name ?? '还没有配置 AI'
+  const activeIsLocal = activeProviderInfo
+    ? isLocalAddress(activeProviderInfo.baseUrl)
+    : settings.localOnly
+  const modeMismatch = Boolean(activeProviderInfo) && activeIsLocal !== settings.localOnly
+
+  async function changeMode(local: boolean): Promise<void> {
+    if (local === settings.localOnly) return
+    const updated = await window.zhujie.updateSettings({ localOnly: local })
+    setState(updated)
+    const current = updated.providers.find(
+      (provider) => provider.id === updated.settings.defaultProviderId
+    )
+    const currentPreset = presetById(current?.presetId ?? '')
+    const pick =
+      currentPreset && currentPreset.local === local
+        ? currentPreset
+        : PROVIDER_PRESETS.find((preset) => preset.local === local)
+    if (pick) selectPreset(pick.id, updated)
+    flash(local ? '已切换：只用本机模型，不联网' : '已切换：允许云端 AI，选中的文字会发出去')
+  }
+
+  async function detectLocalModels(): Promise<void> {
+    if (!activeProvider) return
+    setPresetBusy(true)
+    setPresetNotice(null)
+    try {
+      const result = await window.zhujie.testProvider(activeProvider.id)
+      setState(await window.zhujie.getState())
+      if (result.ok && result.models.length > 0) {
+        setModelDraft(result.models[0])
+        await savePresetSettings(result.models[0])
+      } else {
+        setPresetNotice({
+          ok: false,
+          message:
+            result.error ?? '没有检测到模型。请先启动 Ollama / LM Studio，并下载一个模型。'
+        })
+      }
+    } finally {
+      setPresetBusy(false)
+    }
+  }
+
+  async function savePresetSettings(modelOverride?: string): Promise<void> {
+    if (!activePreset || !activeProvider) return
+    const model = (modelOverride ?? modelDraft).trim()
+    if (!activePreset.local && !keyDraft.trim() && !activeProvider.hasKey) {
+      setPresetNotice({ ok: false, message: '请先填入 API Key。' })
+      return
+    }
+    if (!model) {
+      if (activePreset.local) {
+        await detectLocalModels()
+        return
+      }
+      setPresetNotice({ ok: false, message: '请选择一个模型。' })
+      return
+    }
+    setPresetBusy(true)
+    setPresetNotice(null)
+    try {
+      await window.zhujie.saveProvider({
+        id: activeProvider.id,
+        name: activePreset.name,
+        kind: activePreset.kind,
+        baseUrl: activePreset.baseUrl,
+        apiKey: keyDraft.trim() ? keyDraft.trim() : undefined,
+        model
+      })
+      let updated = await window.zhujie.updateSettings({
+        defaultProviderId: activeProvider.id,
+        defaultModel: model,
+        localOnly: activePreset.local
+      })
+      setState(updated)
+      setKeyDraft('')
+      const result = await window.zhujie.testProvider(activeProvider.id)
+      updated = await window.zhujie.getState()
+      setState(updated)
+      if (result.ok) {
+        setPresetNotice({
+          ok: true,
+          message: `已启用 ${activePreset.name} · ${model}。连接正常，发现 ${result.models.length} 个模型。`
+        })
+      } else {
+        setPresetNotice({
+          ok: false,
+          message: `已保存，但连接测试失败：${result.error ?? '未知错误'}`
+        })
+      }
+    } catch (error) {
+      setPresetNotice({
+        ok: false,
+        message: error instanceof Error ? error.message : '保存失败'
+      })
+    } finally {
+      setPresetBusy(false)
+    }
+  }
+
+  return (
+    <div className="shell">
+      <div className="titlebar">
+        <div className="brand">
+          <span className="brand-mark">注</span>
+          <div>
+            <strong>注解</strong>
+            <span>划词 AI 助手</span>
+          </div>
+        </div>
+        <div className="titlebar-spacer" />
+        <span className={`hook-pill ${state.hookStatus}`}>
+          <span className="dot" />
+          {state.hookStatus === 'running' ? '取词服务运行中' : state.hookStatus === 'error' ? '取词服务异常' : '取词服务未运行'}
+        </span>
+        <div className="win-actions">
+          <button title="最小化" onClick={() => void window.zhujie.minimizeWindow()}>
+            ─
+          </button>
+          <button title="隐藏到托盘" onClick={() => void window.zhujie.hideWindow()}>
+            ×
+          </button>
+        </div>
+      </div>
+
+      <div className="body">
+        <aside className="sidebar">
+          <nav>
+            {NAV.map((item) => (
+              <button
+                key={item.id}
+                className={tab === item.id ? 'nav-item active' : 'nav-item'}
+                onClick={() => setTab(item.id)}
+              >
+                <Icon name={item.icon} />
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="side-card">
+            <div className="side-card-title">
+              <span className={`live-dot ${settings.enabled ? 'on' : ''}`} />
+              {settings.enabled ? '划词注解已开启' : '划词注解已暂停'}
+            </div>
+            <p>选中任意文字，旁边会出现「注解」。</p>
+            <label className="switch-row">
+              <span>总开关</span>
+              <input
+                type="checkbox"
+                className="switch"
+                checked={settings.enabled}
+                onChange={(event) => void patch({ enabled: event.target.checked })}
+              />
+            </label>
+          </div>
+        </aside>
+
+        <main className="content">
+          {tab === 'apps' && (
+            <section className="section">
+              <header className="section-head">
+                <div>
+                  <h1>应用范围</h1>
+                  <p>决定哪些应用里选中文字时会出现「注解」小框。</p>
+                </div>
+              </header>
+
+              {modelOptions.length === 0 && (
+                <div className="notice-card">
+                  <div>
+                    <strong>还没有可用模型</strong>
+                    <p>先启动 Ollama 或 LM Studio，再点「测试 / 拉取模型」。也可以添加任意 OpenAI 兼容接口。</p>
+                  </div>
+                  <button className="primary" onClick={() => setTab('models')}>
+                    去配置
+                  </button>
+                </div>
+              )}
+
+              <div className="choice-grid">
+                <button
+                  className={settings.filterMode === 'all' ? 'choice active' : 'choice'}
+                  onClick={() => void patch({ filterMode: 'all' })}
+                >
+                  <strong>全部应用</strong>
+                  <span>浏览器、PDF、Office、编辑器里都能用</span>
+                </button>
+                <button
+                  className={settings.filterMode === 'whitelist' ? 'choice active' : 'choice'}
+                  onClick={() => void patch({ filterMode: 'whitelist' })}
+                >
+                  <strong>仅指定应用</strong>
+                  <span>只在下面勾选的应用中出现</span>
+                </button>
+              </div>
+
+              <div className="panel-card">
+                <div className="card-head">
+                  <h2>应用列表</h2>
+                  <div className="app-tools">
+                    <span className="muted">
+                      {apps ? `${appRows.length} 个应用` : '扫描中…'}
+                      {runningCount > 0 ? ` · ${runningCount} 个运行中` : ''}
+                    </span>
+                    <button className="link" onClick={() => void loadApps(true)} disabled={appsLoading}>
+                      {appsLoading ? '扫描中…' : '刷新'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="app-search">
+                  <input
+                    value={appQuery}
+                    placeholder="搜索应用，例如 Chrome、微信、VS Code"
+                    onChange={(event) => setAppQuery(event.target.value)}
+                  />
+                  {appQuery && (
+                    <button className="link" onClick={() => setAppQuery('')}>
+                      清除
+                    </button>
+                  )}
+                </div>
+
+                {appsError && (
+                  <div className="test-error">
+                    扫描应用失败：{appsError}
+                    <button className="link" onClick={() => void loadApps(true)}>
+                      重试
+                    </button>
+                  </div>
+                )}
+
+                {appsLoading && !apps && <p className="hint">正在扫描电脑上的应用…</p>}
+
+                {visibleAppRows.length === 0 ? (
+                  <div className="empty">
+                    {appQuery
+                      ? '没有找到匹配的应用，换个关键词试试。'
+                      : '没有扫描到应用，可以在下面手动输入进程名。'}
+                  </div>
+                ) : (
+                  <ul className="app-list tall">
+                    {visibleAppRows.map((row) => (
+                      <li key={row.key}>
+                        <label className="app-row">
+                          <input
+                            type="checkbox"
+                            checked={isRowWhitelisted(row.key)}
+                            disabled={settings.filterMode !== 'whitelist'}
+                            onChange={() => toggleAppRow(row)}
+                          />
+                          <span className="app-avatar">{row.label.slice(0, 1).toUpperCase()}</span>
+                          <span className="app-info">
+                            <span className="app-name">
+                              {row.label}
+                              {row.running && <span className="badge-running">运行中</span>}
+                              {row.count > 0 && (
+                                <span className="badge-detected">划过 {row.count} 次</span>
+                              )}
+                            </span>
+                            <span className="app-exe">
+                              {row.processName}
+                              {row.title ? ` · ${row.title}` : ''}
+                            </span>
+                          </span>
+                          <span className="app-meta">
+                            {row.lastSeen ? relativeTime(row.lastSeen) : row.installed ? '已安装' : ''}
+                          </span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+
+                <div className="inline-form">
+                  <input
+                    value={appInput}
+                    placeholder="手动输入应用名或进程名，例如 chrome 或 WeChat"
+                    onChange={(event) => setAppInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') addApp()
+                    }}
+                  />
+                  <button onClick={addApp} disabled={!appInput.trim()}>
+                    添加
+                  </button>
+                </div>
+                <p className="hint">
+                  {settings.filterMode === 'all'
+                    ? '当前是「全部应用」；切换到「仅指定应用」后，才能勾选下面的应用。'
+                    : '勾选后，只有这些应用里划词才会出现小框。'}
+                  勾选保存的是真实进程名（如 msedge.exe）；手动输入按进程名精确匹配，可省略 .exe。
+                  应用列表会自动扫描电脑上已安装和正在运行的程序；在注解面板和设置窗口内不会触发。
+                </p>
+              </div>
+
+              {state.hookStatus === 'error' && (
+                <div className="warn-card">
+                  <strong>取词服务启动失败</strong>
+                  <p>{state.hookError}</p>
+                  <p className="muted">可尝试以管理员身份运行，或检查是否有安全软件拦截全局钩子。</p>
+                </div>
+              )}
+            </section>
+          )}
+
+          {tab === 'models' && (
+            <section className="section">
+              <header className="section-head">
+                <div>
+                  <h1>用哪家 AI</h1>
+                  <p>先选本机还是云端，再选服务商、选模型、填 API Key。接口地址不用管。</p>
+                </div>
+              </header>
+
+              <div className="active-card">
+                <div className="active-main">
+                  <span className="muted">当前使用</span>
+                  <strong>{activeLabel}</strong>
+                  <span className="active-model-name">
+                    {settings.defaultModel || '还没有选择模型'}
+                  </span>
+                  {modeMismatch && (
+                    <span className="active-warn">
+                      {activeIsLocal
+                        ? '已切到云端模式，但当前仍用本机模型；选一家云端服务并保存后生效。'
+                        : '已切到本机模式，云端模型会被拦截；请选择一个本机模型。'}
+                    </span>
+                  )}
+                </div>
+                <span className={activeIsLocal ? 'pill' : 'pill warn'}>
+                  {activeIsLocal ? '仅本机' : '云端'}
+                </span>
+              </div>
+
+              <div className="mode-switch">
+                <button
+                  className={settings.localOnly ? 'mode active' : 'mode'}
+                  onClick={() => void changeMode(true)}
+                >
+                  <strong>本机模型</strong>
+                  <span>Ollama / LM Studio · 文字不离开电脑</span>
+                </button>
+                <button
+                  className={!settings.localOnly ? 'mode active' : 'mode'}
+                  onClick={() => void changeMode(false)}
+                >
+                  <strong>云端 AI</strong>
+                  <span>DeepSeek / 通义 / Kimi 等 · 需要 API Key</span>
+                </button>
+              </div>
+
+              <div className="panel-card">
+                <div className="card-head">
+                  <h2>选择服务商</h2>
+                  <span className="muted">{settings.localOnly ? '本机' : '云端'}</span>
+                </div>
+                <div className="preset-grid">
+                  {visiblePresets.map((preset) => {
+                    const provider = state.providers.find(
+                      (item) => (item.presetId ?? item.id) === preset.id
+                    )
+                    const configured = preset.local
+                      ? (provider?.models.length ?? 0) > 0
+                      : Boolean(provider?.hasKey)
+                    return (
+                      <button
+                        key={preset.id}
+                        className={
+                          selectedPresetId === preset.id ? 'preset-card selected' : 'preset-card'
+                        }
+                        onClick={() => selectPreset(preset.id, state)}
+                      >
+                        <span className="preset-name">{preset.name}</span>
+                        <span className="preset-tagline">{preset.tagline}</span>
+                        <span className={configured ? 'preset-state ok' : 'preset-state'}>
+                          {configured ? '已配置' : '未配置'}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {activePreset && activeProvider && (
+                <div className="panel-card setup-card">
+                  <div className="card-head">
+                    <h2>{activePreset.name} 设置</h2>
+                    <span className="muted">
+                      {activePreset.local ? '不用填 Key' : '需要 API Key'}
+                    </span>
+                  </div>
+
+                  {!activePreset.local && (
+                    <label className="field">
+                      <span>API Key</span>
+                      <input
+                        type="password"
+                        value={keyDraft}
+                        placeholder={
+                          activeProvider.hasKey
+                            ? '已保存，留空表示不修改'
+                            : activePreset.keyHint ?? '粘贴 API Key'
+                        }
+                        onChange={(event) => setKeyDraft(event.target.value)}
+                      />
+                      {activePreset.keyUrl && (
+                        <a
+                          className="field-link"
+                          href={activePreset.keyUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          没有 Key？去 {activePreset.name} 获取
+                        </a>
+                      )}
+                    </label>
+                  )}
+
+                  <label className="field">
+                    <span>模型</span>
+                    {activeChoices.length > 0 ? (
+                      <select
+                        value={modelDraft}
+                        onChange={(event) => setModelDraft(event.target.value)}
+                      >
+                        {modelDraft && !activeChoices.includes(modelDraft) && (
+                          <option value={modelDraft}>{modelDraft}（当前）</option>
+                        )}
+                        {!modelDraft && <option value="">请选择模型</option>}
+                        {activeChoices.map((model) => (
+                          <option key={model} value={model}>
+                            {model}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="model-empty">
+                        {activePreset.local
+                          ? '还没检测到本机模型。点下面的按钮，会读取你已经下载的模型。'
+                          : '这个服务商没有预置模型，请手动填写模型名。'}
+                      </div>
+                    )}
+                  </label>
+
+                  {!activePreset.local && (
+                    <details className="mini-advanced">
+                      <summary>列表里没有我要的模型？手动填写</summary>
+                      <input
+                        value={modelDraft}
+                        placeholder="直接输入模型名，例如 deepseek-chat"
+                        onChange={(event) => setModelDraft(event.target.value)}
+                      />
+                    </details>
+                  )}
+
+                  <div className="setup-actions">
+                    <button
+                      className="primary"
+                      disabled={presetBusy}
+                      onClick={() => void savePresetSettings()}
+                    >
+                      {presetBusy
+                        ? '处理中…'
+                        : activePreset.local
+                          ? modelDraft
+                            ? '保存并使用'
+                            : '检测本机模型并启用'
+                          : '保存并测试'}
+                    </button>
+                    {activePreset.local && (
+                      <button
+                        className="ghost"
+                        disabled={presetBusy}
+                        onClick={() => void detectLocalModels()}
+                      >
+                        重新检测模型
+                      </button>
+                    )}
+                    <span className="muted">
+                      {activePreset.local
+                        ? '只访问本机端口，文字不离开电脑。'
+                        : `选中的文字会发送给 ${activePreset.name}，请勿用于敏感内容。`}
+                    </span>
+                  </div>
+
+                  {presetNotice && (
+                    <p className={presetNotice.ok ? 'test-ok' : 'test-error'}>
+                      {presetNotice.message}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <details className="advanced-block">
+                <summary>高级：手动填写接口地址（一般不用）</summary>
+                <p className="hint">
+                  只有在使用公司内网、自建代理，或上面的服务商里没有你要的接口时，才需要改这里。
+                </p>
+
+                {editor && (
+                  <div className="panel-card editor">
+                    <div className="card-head">
+                      <h2>{editor.id ? '编辑服务' : '添加服务'}</h2>
+                      <button className="link" onClick={() => setEditor(null)}>
+                        取消
+                      </button>
+                    </div>
+                    <div className="form-grid">
+                      <label>
+                        <span>名称</span>
+                        <input
+                          value={editor.name}
+                          placeholder="例如 公司内网模型"
+                          onChange={(event) => setEditor({ ...editor, name: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <span>协议</span>
+                        <select
+                          value={editor.kind}
+                          onChange={(event) =>
+                            setEditor({ ...editor, kind: event.target.value as ProviderKind })
+                          }
+                        >
+                          <option value="openai">OpenAI 兼容</option>
+                          <option value="ollama">Ollama 原生</option>
+                        </select>
+                      </label>
+                      <label className="full">
+                        <span>Base URL</span>
+                        <input
+                          value={editor.baseUrl}
+                          placeholder="http://127.0.0.1:11434 或 http://127.0.0.1:1234/v1"
+                          onChange={(event) => setEditor({ ...editor, baseUrl: event.target.value })}
+                        />
+                      </label>
+                      <label className="full">
+                        <span>API Key（可选，保存在本机密钥存储）</span>
+                        <input
+                          type="password"
+                          value={editor.apiKey}
+                          placeholder="留空表示不修改已保存的密钥"
+                          onChange={(event) => setEditor({ ...editor, apiKey: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <span>输入价格（元 / 百万 tokens）</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={editor.priceIn}
+                          onChange={(event) =>
+                            setEditor({ ...editor, priceIn: Math.max(0, Number(event.target.value) || 0) })
+                          }
+                        />
+                      </label>
+                      <label>
+                        <span>输出价格（元 / 百万 tokens）</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={editor.priceOut}
+                          onChange={(event) =>
+                            setEditor({ ...editor, priceOut: Math.max(0, Number(event.target.value) || 0) })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <p className="hint">费用按这里的价格估算；内置服务商已带默认价目，本机模型为 0。</p>
+                    <div className="form-actions">
+                      <button
+                        className="primary"
+                        disabled={savingProvider}
+                        onClick={() => void saveProvider()}
+                      >
+                        {savingProvider ? '保存中…' : '保存'}
+                      </button>
+                      {editor.id && (
+                        <button
+                          className="ghost danger"
+                          onClick={async () => {
+                            await window.zhujie.saveProvider({
+                              id: editor.id,
+                              name: editor.name,
+                              kind: editor.kind,
+                              baseUrl: editor.baseUrl,
+                              apiKey: null
+                            })
+                            flash('已清除密钥')
+                          }}
+                        >
+                          清除密钥
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="provider-list">
+                  {state.providers
+                    .filter((provider) => !provider.presetId)
+                    .map((provider) => (
+                      <ProviderCard
+                        key={provider.id}
+                        provider={provider}
+                        test={tests[provider.id]}
+                        isDefault={provider.id === settings.defaultProviderId}
+                        onTest={() => void testProvider(provider.id)}
+                        onEdit={() =>
+                          setEditor({
+                            id: provider.id,
+                            name: provider.name,
+                            kind: provider.kind,
+                            baseUrl: provider.baseUrl,
+                            apiKey: '',
+                            priceIn: provider.priceIn,
+                            priceOut: provider.priceOut
+                          })
+                        }
+                        onRemove={async () => {
+                          if (!window.confirm(`删除「${provider.name}」？`)) return
+                          setState(await window.zhujie.removeProvider(provider.id))
+                          flash('已删除')
+                        }}
+                        onUseModel={(model) => {
+                          void patch(
+                            { defaultProviderId: provider.id, defaultModel: model },
+                            `默认模型：${model}`
+                          )
+                        }}
+                        currentModel={
+                          provider.id === settings.defaultProviderId ? settings.defaultModel : ''
+                        }
+                      />
+                    ))}
+                </div>
+
+                <button
+                  className="ghost"
+                  onClick={() =>
+                    setEditor({ name: '', kind: 'openai', baseUrl: '', apiKey: '', priceIn: 0, priceOut: 0 })
+                  }
+                >
+                  添加自定义服务
+                </button>
+              </details>
+            </section>
+          )}
+
+          {tab === 'prompt' && (
+            <section className="section">
+              <header className="section-head">
+                <div>
+                  <h1>注解提示词</h1>
+                  <p>作为系统提示词发送给模型；选中的文字会作为用户消息附在后面。</p>
+                </div>
+                <div className="head-actions">
+                  <button
+                    className="ghost"
+                    onClick={() => {
+                      setPromptDraft(DEFAULT_PROMPT)
+                      setPromptDirty(true)
+                    }}
+                  >
+                    恢复默认
+                  </button>
+                  <button className="primary" disabled={!promptDirty} onClick={() => void savePrompt()}>
+                    保存
+                  </button>
+                </div>
+              </header>
+
+              <div className="panel-card">
+                <div className="card-head">
+                  <h2>结合上下文</h2>
+                  <input
+                    type="checkbox"
+                    className="switch"
+                    checked={settings.useContext}
+                    onChange={(event) => void patch({ useContext: event.target.checked })}
+                  />
+                </div>
+                <p className="muted">
+                  开启后，点「注解 / 提问」时会读取选中位置前后各 {settings.contextChars} 字，把
+                  【选中】部分标出来后一起发给模型。只读取当前应用的无障碍文本，不截屏；取不到时自动只发选中文字。
+                </p>
+                <div className="context-length">
+                  <span>前后各</span>
+                  <input
+                    key={settings.contextChars}
+                    type="number"
+                    min="100"
+                    max="1000"
+                    step="50"
+                    defaultValue={settings.contextChars}
+                    disabled={!settings.useContext}
+                    onBlur={(event) =>
+                      void patch({ contextChars: Number(event.target.value) || 300 })
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') event.currentTarget.blur()
+                    }}
+                  />
+                  <span>字</span>
+                  <span className="muted">
+                    会多发送约 2 倍上下文，费用通常为原来的 1.5–2 倍。
+                  </span>
+                </div>
+              </div>
+
+              <div className="panel-card">
+                <textarea
+                  className="prompt-box"
+                  value={promptDraft}
+                  onChange={(event) => {
+                    setPromptDraft(event.target.value)
+                    setPromptDirty(true)
+                  }}
+                  spellCheck={false}
+                />
+                <div className="prompt-foot">
+                  <span className="muted">{promptDraft.length} 字</span>
+                  <span className="muted">建议保留“Markdown / 300 字以内”之类的约束，面板显示更稳定。</span>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {tab === 'history' && (
+            <section className="section">
+              <header className="section-head">
+                <div>
+                  <h1>历史记录</h1>
+                  <p>注解和提问都会保存在本机，最多保留 1000 条。</p>
+                </div>
+                <button
+                  className="ghost danger"
+                  disabled={!historyItems?.length}
+                  onClick={() => void clearHistory()}
+                >
+                  清空记录
+                </button>
+              </header>
+
+              <div className="history-toolbar">
+                <input
+                  value={historyQuery}
+                  placeholder="搜索选中的文字、问题、回答或应用"
+                  onChange={(event) => setHistoryQuery(event.target.value)}
+                />
+                <span className="muted">共 {historyItems?.length ?? 0} 条</span>
+              </div>
+
+              {!historyItems || historyItems.length === 0 ? (
+                <div className="panel-card empty tall">
+                  还没有历史记录。选中文字做一次注解或提问后，这里会出现记录。
+                </div>
+              ) : filteredHistory.length === 0 ? (
+                <div className="panel-card empty tall">没有匹配的记录，换个关键词试试。</div>
+              ) : (
+                <div className="history-layout">
+                  <div className="history-list">
+                    {filteredHistory.map((record) => (
+                      <button
+                        key={record.id}
+                        className={
+                          selectedHistory?.id === record.id ? 'history-item active' : 'history-item'
+                        }
+                        onClick={() => setSelectedHistoryId(record.id)}
+                      >
+                        <div className="history-item-top">
+                          <span className={record.mode === 'ask' ? 'history-mode ask' : 'history-mode'}>
+                            {record.mode === 'ask' ? '提问' : '注解'}
+                          </span>
+                          <span className="muted">{fmtTime(record.ts)}</span>
+                        </div>
+                        <div className="history-snippet">{record.question || record.text}</div>
+                        <div className="history-meta">
+                          {record.programName} · {record.model}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {selectedHistory && (
+                    <div className="history-detail">
+                      <div className="history-detail-head">
+                        <div>
+                          <strong>{selectedHistory.mode === 'ask' ? '提问' : '注解'}</strong>
+                          <span className="muted">
+                            {fmtTime(selectedHistory.ts)} · {selectedHistory.programName} ·{' '}
+                            {selectedHistory.model}
+                          </span>
+                        </div>
+                        <div className="history-actions">
+                          <button
+                            className="link"
+                            onClick={() => {
+                              void window.zhujie.writeClipboard(selectedHistory.answer)
+                              flash('已复制回答')
+                            }}
+                          >
+                            复制回答
+                          </button>
+                          <button
+                            className="link danger"
+                            onClick={() => void removeHistory(selectedHistory.id)}
+                          >
+                            删除
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="history-quote">{selectedHistory.text}</div>
+                      {selectedHistory.question && (
+                        <div className="asked-question">
+                          <span>你的问题</span>
+                          <p>{selectedHistory.question}</p>
+                        </div>
+                      )}
+                      <div
+                        className="history-answer markdown"
+                        dangerouslySetInnerHTML={{ __html: historyHtml }}
+                      />
+                      <div className="history-foot">
+                        {selectedHistory.totalTokens.toLocaleString()} tokens ·{' '}
+                        {formatCny(selectedHistory.cost)}
+                        {selectedHistory.contextChars
+                          ? ` · 结合上下文 ${selectedHistory.contextChars} 字`
+                          : ''}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+
+          {tab === 'usage' && (
+            <section className="section">
+              <header className="section-head">
+                <div>
+                  <h1>用量统计</h1>
+                  <p>记录每次注解/提问的模型、token、费用与耗时，数据只写在本机。</p>
+                </div>
+                <button className="ghost danger" onClick={() => void clearUsage()}>
+                  清空记录
+                </button>
+              </header>
+
+              {!usage || usage.total.requests === 0 ? (
+                <div className="panel-card empty tall">
+                  还没有用量。选中一段文字、点开「注解」后，这里会按模型和应用记录 token。
+                </div>
+              ) : (
+                <>
+                  <div className="stat-grid">
+                    <div className="stat">
+                      <span>今日 tokens</span>
+                      <strong>{fmtNum(usage.today.tokens)}</strong>
+                      <small>{usage.today.requests} 次 · {formatCny(usage.today.cost)}</small>
+                    </div>
+                    <div className="stat">
+                      <span>累计 tokens</span>
+                      <strong>{fmtNum(usage.total.tokens)}</strong>
+                      <small>{usage.total.requests} 次 · {formatCny(usage.total.cost)}</small>
+                    </div>
+                    <div className="stat">
+                      <span>累计花费</span>
+                      <strong>{formatCny(usage.total.cost)}</strong>
+                      <small>人民币估算</small>
+                    </div>
+                    <div className="stat">
+                      <span>平均耗时</span>
+                      <strong>{(usage.avgLatencyMs / 1000).toFixed(1)}s</strong>
+                      <small>仅统计成功请求</small>
+                    </div>
+                    <div className="stat">
+                      <span>使用模型</span>
+                      <strong>{usage.byModel.length}</strong>
+                      <small>{usage.byApp.length} 个应用</small>
+                    </div>
+                  </div>
+
+                  <div className="panel-card">
+                    <div className="card-head">
+                      <h2>近 14 天</h2>
+                      <span className="muted">tokens / 天</span>
+                    </div>
+                    <div className="chart">
+                      {(() => {
+                        const max = Math.max(1, ...usage.byDay.map((d) => d.tokens))
+                        return usage.byDay.map((day) => (
+                          <div
+                            className="chart-col"
+                            key={day.date}
+                            title={`${day.date} · ${fmtNum(day.tokens)} tokens · ${formatCny(day.cost)}`}
+                          >
+                            <div className="chart-bar-wrap">
+                              <div
+                                className="chart-bar"
+                                style={{ height: `${Math.max(day.tokens > 0 ? 6 : 1, (day.tokens / max) * 100)}%` }}
+                              />
+                            </div>
+                            <span>{day.date.slice(5)}</span>
+                          </div>
+                        ))
+                      })()}
+                    </div>
+                  </div>
+
+                  <div className="two-col">
+                    <div className="panel-card">
+                      <div className="card-head">
+                        <h2>按模型</h2>
+                      </div>
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>模型</th>
+                            <th>次数</th>
+                            <th>tokens</th>
+                            <th>花费</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {usage.byModel.map((bucket) => (
+                            <tr key={bucket.key}>
+                              <td className="mono">{bucket.key}</td>
+                              <td>{bucket.requests}</td>
+                              <td>{fmtNum(bucket.tokens)}</td>
+                              <td>{formatCny(bucket.cost)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="panel-card">
+                      <div className="card-head">
+                        <h2>按应用</h2>
+                      </div>
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>应用</th>
+                            <th>次数</th>
+                            <th>tokens</th>
+                            <th>花费</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {usage.byApp.slice(0, 8).map((bucket) => (
+                            <tr key={bucket.key}>
+                              <td>{bucket.key}</td>
+                              <td>{bucket.requests}</td>
+                              <td>{fmtNum(bucket.tokens)}</td>
+                              <td>{formatCny(bucket.cost)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="panel-card">
+                    <div className="card-head">
+                      <h2>最近记录</h2>
+                      <span className="muted">最多显示 50 条</span>
+                    </div>
+                    <table className="data-table recent-table">
+                      <thead>
+                        <tr>
+                          <th>时间</th>
+                          <th>应用</th>
+                          <th>模型</th>
+                          <th>tokens</th>
+                          <th>花费</th>
+                          <th>耗时</th>
+                          <th>状态</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {usage.recent.map((record) => (
+                          <tr key={record.id} title={record.error ?? ''}>
+                            <td>{fmtTime(record.ts)}</td>
+                            <td>{record.programName}</td>
+                            <td className="mono">{record.model}</td>
+                            <td>
+                              {record.estimated ? '≈' : ''}
+                              {fmtNum(record.totalTokens)}
+                            </td>
+                            <td>{formatCny(record.cost ?? 0)}</td>
+                            <td>{Math.round(record.latencyMs)}ms</td>
+                            <td>
+                              <span className={record.ok ? 'status ok' : 'status bad'}>
+                                {record.ok ? '成功' : '失败'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="hint">
+                      费用按内置价目估算（人民币），本机模型为 0；自定义接口可在「高级」里填写输入/输出价格。
+                    </p>
+                  </div>
+                </>
+              )}
+            </section>
+          )}
+
+          {tab === 'about' && (
+            <section className="section">
+              <header className="section-head">
+                <div>
+                  <h1>关于</h1>
+                  <p>划词注解 · 本地优先的阅读辅助工具。</p>
+                </div>
+              </header>
+
+              <div className="panel-card about-grid">
+                <div>
+                  <span className="muted">版本</span>
+                  <strong>{state.version}</strong>
+                </div>
+                <div>
+                  <span className="muted">制作人</span>
+                  <strong>piona</strong>
+                </div>
+                <div>
+                  <span className="muted">平台</span>
+                  <strong>{state.platform}</strong>
+                </div>
+                <div>
+                  <span className="muted">取词服务</span>
+                  <strong>{state.hookStatus === 'running' ? '运行中' : state.hookStatus}</strong>
+                </div>
+                <div>
+                  <span className="muted">数据目录</span>
+                  <div className="copy-line">
+                    <code title={state.dataDir}>{state.dataDir}</code>
+                    <button
+                      className="link"
+                      onClick={() => {
+                        void window.zhujie.writeClipboard(state.dataDir)
+                        flash('路径已复制')
+                      }}
+                    >
+                      复制
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="panel-card">
+                <div className="card-head">
+                  <h2>隐私</h2>
+                </div>
+                <p className="prose">
+                  配置、用量记录都只保存在本机数据目录。默认开启「仅本机」，请求只会发往
+                  localhost。关闭后才会使用你自行配置的云端接口；本应用没有内置遥测、
+                  账号或云同步。
+                </p>
+              </div>
+
+              <div className="panel-card">
+                <div className="card-head">
+                  <h2>参考项目与许可</h2>
+                  <span className="muted">MIT · 制作人 piona</span>
+                </div>
+                <ul className="ref-list">
+                  <li>
+                    <a href="https://github.com/0xfullex/selection-hook" target="_blank" rel="noreferrer">
+                      selection-hook
+                    </a>
+                    <span className="license">MIT</span>
+                    <span>全局划词取词与鼠标/键盘钩子，返回文本、坐标与应用名。</span>
+                  </li>
+                  <li>
+                    <a href="https://github.com/zcx960/AIA-selection-assistan" target="_blank" rel="noreferrer">
+                      AIA-selection-assistan
+                    </a>
+                    <span className="license">MIT</span>
+                    <span>Electron 划词助手的交互与窗口定位思路参考。</span>
+                  </li>
+                  <li>
+                    <a href="https://github.com/CherryHQ/cherry-studio" target="_blank" rel="noreferrer">
+                      Cherry Studio
+                    </a>
+                    <span className="license warn">AGPL-3.0</span>
+                    <span>划词助手产品形态调研；未复用其代码。</span>
+                  </li>
+                  <li>
+                    <a href="https://github.com/pot-app/pot-desktop" target="_blank" rel="noreferrer">
+                      pot-desktop
+                    </a>
+                    <span className="license warn">GPL-3.0</span>
+                    <span>划词翻译交互调研；仓库已归档，未复用其代码。</span>
+                  </li>
+                  <li>
+                    <a href="https://github.com/nextai-translator/nextai-translator" target="_blank" rel="noreferrer">
+                      nextai-translator
+                    </a>
+                    <span className="license warn">AGPL-3.0</span>
+                    <span>桌面划词产品调研；未复用其代码。</span>
+                  </li>
+                </ul>
+              </div>
+            </section>
+          )}
+        </main>
+      </div>
+
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  )
+}
+
+interface ProviderCardProps {
+  provider: ProviderView
+  test?: TestState
+  isDefault: boolean
+  currentModel: string
+  onTest: () => void
+  onEdit: () => void
+  onRemove: () => void
+  onUseModel: (model: string) => void
+}
+
+function ProviderCard({
+  provider,
+  test,
+  isDefault,
+  currentModel,
+  onTest,
+  onEdit,
+  onRemove,
+  onUseModel
+}: ProviderCardProps): JSX.Element {
+  const local = /^(http:\/\/)?(localhost|127\.0\.0\.1|\[::1\])/i.test(provider.baseUrl)
+  return (
+    <div className={isDefault ? 'provider-card default' : 'provider-card'}>
+      <div className="provider-head">
+        <div>
+          <h3>
+            {provider.name}
+            {isDefault && <span className="pill accent">默认</span>}
+            <span className={local ? 'pill' : 'pill warn'}>{local ? '本机' : '外部'}</span>
+          </h3>
+          <code className="provider-url">{provider.baseUrl}</code>
+        </div>
+        <div className="provider-actions">
+          <button className="ghost" onClick={onTest} disabled={test?.loading}>
+            {test?.loading ? '测试中…' : '测试 / 拉取模型'}
+          </button>
+          <button className="ghost" onClick={onEdit}>
+            编辑
+          </button>
+          {!provider.builtin && (
+            <button className="ghost danger" onClick={onRemove}>
+              删除
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="model-chips">
+        {provider.models.length === 0 ? (
+          <span className="muted">尚未获取模型列表</span>
+        ) : (
+          provider.models.map((model) => (
+            <button
+              key={model}
+              className={model === currentModel ? 'chip-model active' : 'chip-model'}
+              onClick={() => onUseModel(model)}
+              title="设为默认模型"
+            >
+              {model}
+            </button>
+          ))
+        )}
+      </div>
+
+      {test?.error && <p className="test-error">{test.error}</p>}
+      {test?.ok && <p className="test-ok">连接正常，发现 {test.models} 个模型。</p>}
+      {provider.hasKey && <span className="key-flag">已保存 API Key</span>}
+    </div>
+  )
+}

@@ -1,0 +1,17 @@
+node_modules/
+out/
+release/
+.probe/
+vibe_images/
+dev.log
+*.log
+selftest/run.log
+selftest/result.json
+*.tsbuildinfo
+selftest/about.png
+
+.env
+.env.*
+*.pem
+*.key
+*.p12
