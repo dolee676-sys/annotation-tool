@@ -1,6 +1,8 @@
 # 注解 · 划词 AI 助手
 
-> 制作人：piona · MIT License
+[![CI](https://github.com/dolee676-sys/zhujie-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/dolee676-sys/zhujie-ai/actions/workflows/ci.yml)
+
+> 制作人：piona · MIT License · [GitHub 仓库](https://github.com/dolee676-sys/zhujie-ai)
 
 在任意应用里选中一段文字，旁边会出现「注解 / 提问」小框；点开就是 AI 解析或问答。默认只连本机模型，可切换模型、按应用启用，并记录每次调用的 token、费用和历史对话。
 
