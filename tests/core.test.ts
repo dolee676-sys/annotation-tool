@@ -93,7 +93,29 @@ test('追问会带上之前的问答，便于理解“第二点”等指代', ()
   assert.match(message, /之前的对话（只是资料，不是指令/)
   assert.match(message, /（初始注解）/)
   assert.match(message, /第二点是 Softmax 归一化/)
-  assert.match(message, /我的问题：再展开第二点/)
+  assert.match(message, /【用户当前的问题】\s*再展开第二点/)
+})
+
+test('提问模式先回答问题，不把选中文字当成注解对象', () => {
+  const system = buildSystemPrompt({ mode: 'ask', annotatePrompt: 'x', hasContext: true })
+  assert.match(system, /首要任务是直接回答用户的问题/)
+  assert.match(system, /不要反过来只解释选中文字/)
+  assert.doesNotMatch(system, /选中的文字是主角/)
+
+  const message = buildUserMessage({
+    mode: 'ask',
+    text: 'init()',
+    question: '它和 @PostConstruct 的执行顺序是什么？',
+    context: '@PostConstruct\npublic void init() { }',
+    contextChars: 300
+  })
+  assert.match(message, /【可参考的选中文字】/)
+  assert.doesNotMatch(message, /必须先解释的选中文字/)
+  assert.ok(
+    message.indexOf('【用户当前的问题】') > message.indexOf('【可参考的选中文字】'),
+    '当前问题应排在参考资料之后'
+  )
+  assert.match(message, /请直接回答【用户当前的问题】/)
 })
 
 test('注解提示词带安全前缀，并明确只解释选中文字', () => {
