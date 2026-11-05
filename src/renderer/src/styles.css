@@ -725,6 +725,14 @@ button {
   font-size: 10.5px;
 }
 
+.model-hint {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+}
+
 .live-dot {
   width: 6px;
   height: 6px;

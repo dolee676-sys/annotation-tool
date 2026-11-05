@@ -261,6 +261,7 @@ export function Panel(): JSX.Element {
   const current =
     init?.options.find((o) => o.providerId === init.providerId && o.model === model) ?? null
   const selectedValue = current ? `${current.providerId}::${current.model}` : ''
+  const lightModel = current?.model === 'glm-4-flash' || current?.model === 'qwen-turbo'
 
   const busy =
     initialStatus === 'waiting' ||
@@ -597,6 +598,14 @@ export function Panel(): JSX.Element {
         )}
         <span className="foot-spacer" />
         {favoriteError && <span className="quote-warn">{favoriteError}</span>}
+        {lightModel && (
+          <span
+            className="model-hint"
+            title="这是轻量模型，复杂提问建议在顶部切换到 glm-4-plus、DeepSeek 等更强的模型"
+          >
+            轻量模型
+          </span>
+        )}
         {init && init.contextChars > 0 && <span className="context-badge">结合上下文</span>}
         {pinnedOpen && <span className="pin-badge">已钉住</span>}
         {init?.localOnly && <span className="local-badge">仅本机</span>}

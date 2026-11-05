@@ -140,11 +140,13 @@ test('点注解按钮但选中的是问题时，先回答再解释', () => {
 
   const system = buildSystemPrompt({
     mode: 'annotate',
-    annotatePrompt: 'x',
+    annotatePrompt: 'CUSTOM_WORD_TEMPLATE',
     hasContext: true,
     questionLike: true
   })
-  assert.match(system, /先直接回答这个问题/)
+  assert.match(system, /第一句必须是答案本身/)
+  assert.match(system, /不要套用「词义 → 在当前语境 → 作用」的模板/)
+  assert.doesNotMatch(system, /CUSTOM_WORD_TEMPLATE/)
 
   const message = buildUserMessage({
     mode: 'annotate',
@@ -152,9 +154,16 @@ test('点注解按钮但选中的是问题时，先回答再解释', () => {
     context: '注入依赖后再执行初始化方法。',
     contextChars: 300
   })
+  assert.match(message, /【用户提出的问题】/)
+  assert.doesNotMatch(message, /必须先解释的选中文字/)
+  assert.match(message, /第一句直接给答案/)
   assert.match(message, /\*\*回答\*\*/)
   assert.match(message, /\*\*解释\*\*/)
   assert.ok(message.indexOf('**回答**') < message.indexOf('**解释**'))
+  assert.ok(
+    message.indexOf('【问题所在文章片段') < message.indexOf('【用户提出的问题】'),
+    '问题应放在参考片段之后'
+  )
 })
 
 test('上下文注解把选中文字放在文章片段之前，避免模型转去解释上下文', () => {
