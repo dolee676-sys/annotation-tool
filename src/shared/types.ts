@@ -41,6 +41,7 @@ export interface SettingsView {
   launchAtLogin: boolean
   useContext: boolean
   contextChars: number
+  historyEnabled: boolean
 }
 
 export interface AppState {
@@ -201,6 +202,7 @@ export interface SettingsPatch {
   launchAtLogin?: boolean
   useContext?: boolean
   contextChars?: number
+  historyEnabled?: boolean
 }
 
 export interface ProviderPatch {

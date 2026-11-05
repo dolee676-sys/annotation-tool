@@ -8,6 +8,9 @@ marked.setOptions({ gfm: true, breaks: true })
 
 export function Chip(): JSX.Element {
   const [busy, setBusy] = useState<'annotate' | 'ask' | null>(null)
+  const [appearId, setAppearId] = useState(0)
+
+  useEffect(() => window.zhujie.onAppear(() => setAppearId((value) => value + 1)), [])
 
   const trigger = (action: 'annotate' | 'ask'): void => {
     if (busy) return
@@ -16,7 +19,7 @@ export function Chip(): JSX.Element {
   }
 
   return (
-    <div className="chip-host">
+    <div className="chip-host" key={appearId}>
       <button
         className="chip"
         title="AI 注解这段文字"

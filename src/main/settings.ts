@@ -38,6 +38,7 @@ export interface StoredSettings {
   launchAtLogin: boolean
   useContext: boolean
   contextChars: number
+  historyEnabled: boolean
   providers: StoredProvider[]
 }
 
@@ -83,6 +84,7 @@ function defaults(): StoredSettings {
     launchAtLogin: false,
     useContext: true,
     contextChars: 300,
+    historyEnabled: true,
     providers: defaultProviders()
   }
 }
@@ -237,6 +239,7 @@ export class SettingsStore {
     }
     if (typeof patch.launchAtLogin === 'boolean') next.launchAtLogin = patch.launchAtLogin
     if (typeof patch.useContext === 'boolean') next.useContext = patch.useContext
+    if (typeof patch.historyEnabled === 'boolean') next.historyEnabled = patch.historyEnabled
     if (typeof patch.contextChars === 'number') {
       next.contextChars = Math.min(1000, Math.max(100, Math.round(patch.contextChars)))
     }

@@ -321,7 +321,8 @@ async function runAnnotationRequest(
       completionTokens: result.completionTokens,
       local: isLocalBaseUrl(provider.baseUrl),
       fallbackIn: provider.priceIn,
-      fallbackOut: provider.priceOut
+      fallbackOut: provider.priceOut,
+      preferFallback: !provider.builtin
     })
     const ts = Date.now()
     usage.add({
@@ -341,22 +342,24 @@ async function runAnnotationRequest(
       latencyMs,
       ok: true
     })
-    history.add({
-      id: history.newId(),
-      ts,
-      mode: options.historyMode,
-      programName: a.programName,
-      providerName: provider.name,
-      model: a.model,
-      text: a.text,
-      question: options.question,
-      answer: result.text,
-      contextChars: a.context?.length ?? 0,
-      totalTokens: result.totalTokens,
-      cost,
-      ok: true
-    })
-    windows.settings?.webContents.send('history:changed')
+    if (s.historyEnabled) {
+      history.add({
+        id: history.newId(),
+        ts,
+        mode: options.historyMode,
+        programName: a.programName,
+        providerName: provider.name,
+        model: a.model,
+        text: a.text,
+        question: options.question,
+        answer: result.text,
+        contextChars: a.context?.length ?? 0,
+        totalTokens: result.totalTokens,
+        cost,
+        ok: true
+      })
+      windows.settings?.webContents.send('history:changed')
+    }
     windows.sendPanel('panel:done', {
       usage: {
         promptTokens: result.promptTokens,
@@ -465,11 +468,17 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
   const s = settings.get()
   const provider = settings.getProvider(s.defaultProviderId) ?? settings.getProvider('ollama')
   if (!provider) {
-    sendPanelError('没有可用的模型服务，请先到设置里添加。')
+    windows.openSettings()
+    hideChip()
     return
   }
   const fallbackModel = provider.models[0] || ''
   const model = s.defaultModel || fallbackModel
+  if (!model) {
+    windows.openSettings()
+    hideChip()
+    return
+  }
 
   const selectedForContext = normalizeForMatch(sel.text)
   const contextApp = sel.programName || '未知应用'
@@ -823,10 +832,6 @@ function registerIpc(): void {
     await openAnnotationFromChip(action === 'ask' ? 'ask' : 'annotate')
     return true
   })
-  handle('chip:hide', () => {
-    hideChip()
-    return true
-  })
 
   handle('panel:ready', () => {
     if (isSelftest) console.log('[selftest] panel:ready', Boolean(activeAnnotation))
@@ -881,12 +886,6 @@ function registerIpc(): void {
 
   handle('window:hide', (event) => {
     BrowserWindow.fromWebContents(event.sender)?.hide()
-    return true
-  })
-
-  handle('app:quit', () => {
-    windows.markQuitting()
-    app.quit()
     return true
   })
 }
@@ -1109,7 +1108,7 @@ async function runSelfTest(): Promise<void> {
     const chip = windows.chip
     if (!chip) throw new Error('注解小框未创建')
     const chipApi = await chip.webContents.executeJavaScript('Object.keys(window.zhujie).sort()')
-    if (JSON.stringify(chipApi) !== JSON.stringify(['chipClick'])) {
+    if (JSON.stringify(chipApi) !== JSON.stringify(['chipClick', 'onAppear'])) {
       throw new Error('小框 preload 权限不符合预期')
     }
     chip.webContents.sendInputEvent({ type: 'mouseDown', x: 44, y: 17, button: 'left', clickCount: 1 })

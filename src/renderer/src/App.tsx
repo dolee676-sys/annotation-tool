@@ -359,7 +359,7 @@ export function App(): JSX.Element {
     if (count < HISTORY_LIMIT) return
     const compressible = count - HISTORY_KEEP_RECENT
     const confirmed = window.confirm(
-      `历史记录已有 ${count} 条。\n\n将把最早的 ${compressible} 条交给当前模型，压缩成一份综合摘要，保留最近 ${HISTORY_KEEP_RECENT} 条。\n\n这会发起一次或多次 AI 请求，可能产生费用，并需要一点时间。继续吗？`
+      `历史记录已有 ${count} 条。\n\n将把最早的 ${compressible} 条压缩成一份综合摘要，保留最近 ${HISTORY_KEEP_RECENT} 条原文。\n\n旧记录会被删除且不可恢复，建议先备份 history.jsonl。压缩会调用 AI，可能产生费用并需要一点时间。继续吗？`
     )
     if (!confirmed) return
     setCompressState({
@@ -1433,6 +1433,17 @@ export function App(): JSX.Element {
                   onChange={(event) => setHistoryQuery(event.target.value)}
                 />
                 <span className="muted">共 {historyItems?.length ?? 0} 条</span>
+                <label
+                  className="history-toggle"
+                  title="关闭后新的注解/提问不再写入历史，已有记录保留"
+                >
+                  <input
+                    type="checkbox"
+                    checked={settings.historyEnabled}
+                    onChange={(event) => void patch({ historyEnabled: event.target.checked })}
+                  />
+                  记录新历史
+                </label>
               </div>
 
               {!historyItems || historyItems.length === 0 ? (

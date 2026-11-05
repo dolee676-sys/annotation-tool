@@ -42,6 +42,7 @@ export interface ZhujieApi {
   clearHistory(): Promise<HistoryRecord[]>
   writeClipboard(text: string): Promise<boolean>
   chipClick(action: 'annotate' | 'ask'): Promise<boolean>
+  onAppear(callback: () => void): () => void
   panelReady(): Promise<boolean>
   panelClose(): Promise<boolean>
   panelRegenerate(): Promise<boolean>

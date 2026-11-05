@@ -133,6 +133,7 @@ export class WindowManager {
     chip.setBounds({ x: Math.round(left), y: Math.round(top), width, height })
     chip.showInactive()
     chip.setAlwaysOnTop(true, 'screen-saver')
+    chip.webContents.send('chip:appear')
   }
 
   hideChip(): void {

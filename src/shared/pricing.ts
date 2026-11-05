@@ -39,13 +39,16 @@ export function estimateCostCny(options: {
   local: boolean
   fallbackIn?: number
   fallbackOut?: number
+  preferFallback?: boolean
 }): number {
   if (options.local) return 0
+  const fallback = {
+    in: Math.max(0, options.fallbackIn ?? 0),
+    out: Math.max(0, options.fallbackOut ?? 0)
+  }
+  const hasFallback = fallback.in > 0 || fallback.out > 0
   const price =
-    priceForModel(options.model) ?? {
-      in: Math.max(0, options.fallbackIn ?? 0),
-      out: Math.max(0, options.fallbackOut ?? 0)
-    }
+    options.preferFallback && hasFallback ? fallback : (priceForModel(options.model) ?? fallback)
   return (
     (Math.max(0, options.promptTokens) / 1_000_000) * price.in +
     (Math.max(0, options.completionTokens) / 1_000_000) * price.out

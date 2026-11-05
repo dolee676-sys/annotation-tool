@@ -120,7 +120,8 @@ export async function compressHistory(options: CompressHistoryOptions): Promise<
     completionTokens: state.completionTokens,
     local: isLocalBaseUrl(provider.baseUrl),
     fallbackIn: provider.priceIn,
-    fallbackOut: provider.priceOut
+    fallbackOut: provider.priceOut,
+    preferFallback: !provider.builtin
   })
   const summary: HistorySummary = {
     id: history.newId(),

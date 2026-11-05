@@ -28,6 +28,18 @@ test('按模型价目估算费用，本机模型为 0', () => {
     }),
     0
   )
+  assert.equal(
+    estimateCostCny({
+      model: 'deepseek-chat',
+      promptTokens: 1_000_000,
+      completionTokens: 1_000_000,
+      local: false,
+      fallbackIn: 1,
+      fallbackOut: 1,
+      preferFallback: true
+    }),
+    2
+  )
   assert.equal(formatCny(0), '¥0')
   assert.equal(formatCny(0.0042), '¥0.0042')
 })
