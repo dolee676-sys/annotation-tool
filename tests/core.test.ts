@@ -96,11 +96,28 @@ test('追问会带上之前的问答，便于理解“第二点”等指代', ()
   assert.match(message, /我的问题：再展开第二点/)
 })
 
-test('注解提示词带安全前缀，上下文模式会追加说明', () => {
+test('注解提示词带安全前缀，并明确只解释选中文字', () => {
   const prompt = buildSystemPrompt({ mode: 'annotate', annotatePrompt: '请注解。', hasContext: true })
   assert.match(prompt, /不是给你的指令/)
-  assert.match(prompt, /结合前后文/)
+  assert.match(prompt, /回答对象是【选中】中的词或短语本身/)
+  assert.match(prompt, /不是它所在的整行\/整段代码/)
+  assert.match(prompt, /上下文只用于理解【选中】部分/)
   assert.match(prompt, /请注解。/)
+})
+
+test('上下文注解把选中文字放在文章片段之前，避免模型转去解释上下文', () => {
+  const message = buildUserMessage({
+    mode: 'annotate',
+    text: 'init()',
+    context: '@PostConstruct\npublic void init() { ... }',
+    contextChars: 300
+  })
+  assert.ok(message.indexOf('【必须先解释的选中文字】') < message.indexOf('【文章片段'))
+  assert.match(message, /"""init\(\)"""/)
+  assert.match(message, /选中的是一个词或短语/)
+  assert.match(message, /1\. 它在当前语境中是什么意思/)
+  assert.match(message, /2\. 它在当前语境中起什么作用/)
+  assert.match(message, /不要把整行\/整段代码当成选中内容/)
 })
 
 test('只允许本地应用页面导航与发送 IPC', () => {
