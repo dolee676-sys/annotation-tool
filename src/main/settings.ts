@@ -40,8 +40,15 @@ export interface StoredSettings {
   contextChars: number
   historyEnabled: boolean
   autoDownloadUpdates: boolean
+  promptStandardVersion: number
   providers: StoredProvider[]
 }
+
+const PROMPT_STANDARD_SUFFIX = `【回答顺序（必须遵守）】
+1. **词义**：先说明选中的词/短语本身是什么（通用解释；术语可给英文全称或中文译名）。
+2. **在当前语境**：结合这段代码/文章，说明它具体指什么。
+3. **作用**：说明它在这里起什么作用、和前后内容如何配合。
+回答对象只能是选中的内容；不要把整行/整段代码或旁边的注解当成回答对象。`
 
 const CUSTOM_PROVIDER: StoredProvider = {
   id: 'custom',
@@ -87,6 +94,7 @@ function defaults(): StoredSettings {
     contextChars: 300,
     historyEnabled: true,
     autoDownloadUpdates: false,
+    promptStandardVersion: 2,
     providers: defaultProviders()
   }
 }
@@ -126,6 +134,13 @@ export class SettingsStore {
       const known = new Set(merged.providers.map((p) => p.id))
       for (const p of defaultProviders()) {
         if (!known.has(p.id)) merged.providers.push(p)
+      }
+      if (!raw.promptStandardVersion || raw.promptStandardVersion < 2) {
+        if (!merged.prompt.includes('**词义**')) {
+          merged.prompt = `${merged.prompt.trim()}\n\n${PROMPT_STANDARD_SUFFIX}`
+        }
+        merged.promptStandardVersion = 2
+        this.writeNow(merged)
       }
       return merged
     } catch {

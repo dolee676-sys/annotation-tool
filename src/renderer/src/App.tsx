@@ -1406,6 +1406,25 @@ export function App(): JSX.Element {
                 </div>
               </header>
 
+              <div className="notice-card">
+                <div>
+                  <strong>回答顺序（应用强制执行）</strong>
+                  <p>
+                    选中的词优先：词义 → 在当前语境 → 作用。旧提示词不会改变这个顺序；
+                    点「恢复默认」可套用新的三段式模板。
+                  </p>
+                </div>
+                <button
+                  className="ghost"
+                  onClick={() => {
+                    setPromptDraft(DEFAULT_PROMPT)
+                    setPromptDirty(true)
+                  }}
+                >
+                  套用模板
+                </button>
+              </div>
+
               <div className="panel-card">
                 <div className="card-head">
                   <h2>结合上下文</h2>
