@@ -167,7 +167,8 @@ function buildModelOptions(currentProviderId: string, currentModel: string): Pan
           model,
           local,
           fallbackIn: provider.priceIn,
-          fallbackOut: provider.priceOut
+          fallbackOut: provider.priceOut,
+          useFallback: !provider.builtin
         })
       })
     }
@@ -185,7 +186,8 @@ function buildModelOptions(currentProviderId: string, currentModel: string): Pan
           model: currentModel,
           local,
           fallbackIn: provider.priceIn,
-          fallbackOut: provider.priceOut
+          fallbackOut: provider.priceOut,
+          useFallback: !provider.builtin
         })
       })
     }

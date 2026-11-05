@@ -60,8 +60,28 @@ test('消耗倍率以 deepseek-chat 为 1×，并覆盖本机/免费/自定义�
     0.2
   )
   assert.equal(usageMultiplier({ model: 'custom-model' }), null)
+  assert.equal(usageMultiplier({ model: 'deepseek-flash' }), 1)
+  assert.equal(usageMultiplier({ model: 'deepseek-v4-pro' }), 3.6)
+  assert.equal(usageMultiplier({ model: 'glm-5.3' }), 3.6)
+  assert.equal(usageMultiplier({ model: 'glm-5.3-flash' }), 0.36)
+  assert.equal(usageMultiplier({ model: 'glm-4.6' }), 1.7)
+  assert.equal(usageMultiplier({ model: 'glm-4-plus' }), 1)
+  assert.equal(
+    usageMultiplier({
+      model: 'unknown-model',
+      fallbackIn: 2,
+      fallbackOut: 8,
+      useFallback: false
+    }),
+    null
+  )
+  assert.equal(
+    usageMultiplier({ model: 'unknown-model', fallbackIn: 2, fallbackOut: 8 }),
+    1
+  )
   assert.equal(formatUsageMultiplier(0), '免费')
   assert.equal(formatUsageMultiplier(1), '1.00×')
+  assert.equal(formatUsageMultiplier(3.6), '3.60×')
   assert.equal(formatUsageMultiplier(1.04), '1.04×')
   assert.equal(formatUsageMultiplier(0.09), '0.09×')
   assert.equal(formatUsageMultiplier(0.001), '<0.01×')

@@ -139,7 +139,13 @@ const readableError = (error: unknown): string => {
 }
 
 function MultiplierBadge({ value }: { value: number | null }): JSX.Element | null {
-  if (value === null) return null
+  if (value === null) {
+    return (
+      <span className="multiplier unknown" title="未收录该模型价格，暂不比较">
+        —
+      </span>
+    )
+  }
   const tone = value === 0 ? 'free' : value < 0.5 ? 'low' : value <= 2 ? 'mid' : 'high'
   return (
     <span
@@ -760,7 +766,8 @@ export function App(): JSX.Element {
         model: settings.defaultModel,
         local: activeIsLocal,
         fallbackIn: activeProviderInfo.priceIn,
-        fallbackOut: activeProviderInfo.priceOut
+        fallbackOut: activeProviderInfo.priceOut,
+        useFallback: !activeProviderInfo.builtin
       })
     : null
 
@@ -1215,7 +1222,8 @@ export function App(): JSX.Element {
                                 model,
                                 local: activePreset.local,
                                 fallbackIn: activeProvider.priceIn,
-                                fallbackOut: activeProvider.priceOut
+                                fallbackOut: activeProvider.priceOut,
+                                useFallback: !activeProvider.builtin
                               })
                             )}
                           </option>
@@ -2423,7 +2431,8 @@ function ProviderCard({
                   model,
                   local,
                   fallbackIn: provider.priceIn,
-                  fallbackOut: provider.priceOut
+                  fallbackOut: provider.priceOut,
+                  useFallback: !provider.builtin
                 })}
               />
             </button>

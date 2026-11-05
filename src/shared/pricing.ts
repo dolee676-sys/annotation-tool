@@ -7,6 +7,9 @@ export interface ModelPrice {
 export const MODEL_PRICES_CNY: Record<string, ModelPrice> = {
   'deepseek-chat': { in: 2, out: 8 },
   'deepseek-reasoner': { in: 4, out: 16 },
+  'deepseek-flash': { in: 2, out: 8 },
+  'deepseek-v4-flash': { in: 2, out: 8 },
+  'deepseek-v4-pro': { in: 9, out: 27 },
   'qwen-plus': { in: 0.8, out: 2 },
   'qwen-max': { in: 2.4, out: 9.6 },
   'qwen-turbo': { in: 0.3, out: 0.6 },
@@ -14,8 +17,22 @@ export const MODEL_PRICES_CNY: Record<string, ModelPrice> = {
   'moonshot-v1-8k': { in: 12, out: 12 },
   'moonshot-v1-32k': { in: 24, out: 24 },
   'moonshot-v1-128k': { in: 60, out: 60 },
-  'glm-4-plus': { in: 50, out: 50 },
-  'glm-4-air': { in: 1, out: 1 },
+  'glm-5.3': { in: 8, out: 28 },
+  'glm-5.3-flash': { in: 0.8, out: 2.8 },
+  'glm-5.3-flashx': { in: 2, out: 7 },
+  'glm-5.2': { in: 8, out: 28 },
+  'glm-5.1': { in: 6, out: 24 },
+  'glm-5-turbo': { in: 5, out: 22 },
+  'glm-5': { in: 4, out: 18 },
+  'glm-4.7-flashx': { in: 0.5, out: 3 },
+  'glm-4.7-flash': { in: 0, out: 0 },
+  'glm-4.7': { in: 3, out: 14 },
+  'glm-4.6': { in: 3, out: 14 },
+  'glm-4.5-air': { in: 0.8, out: 6 },
+  'glm-4.5': { in: 3, out: 14 },
+  'glm-4-plus': { in: 5, out: 5 },
+  'glm-4-air': { in: 0.5, out: 0.5 },
+  'glm-4-flashx': { in: 0.1, out: 0.1 },
   'glm-4-flash': { in: 0, out: 0 },
   'gpt-4o-mini': { in: 1.1, out: 4.3 },
   'gpt-4o': { in: 18, out: 72 },
@@ -71,6 +88,7 @@ export function usageMultiplier(options: {
   local?: boolean
   fallbackIn?: number
   fallbackOut?: number
+  useFallback?: boolean
 }): number | null {
   if (options.local) return 0
   const known = priceForModel(options.model)
@@ -78,6 +96,9 @@ export function usageMultiplier(options: {
     const combined = known.in + known.out
     return combined <= 0 ? 0 : combined / USAGE_BASELINE_COMBINED
   }
+  // 内置服务商的模型没有收录价目时，宁可显示“未收录”，也不要把所有
+  // 未知模型都按同一个服务商价格显示成 1.00×，造成错误比较。
+  if (options.useFallback === false) return null
   const fallbackIn = Math.max(0, options.fallbackIn ?? 0)
   const fallbackOut = Math.max(0, options.fallbackOut ?? 0)
   const combined = fallbackIn + fallbackOut
