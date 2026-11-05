@@ -6,8 +6,8 @@ import { isTrustedRendererUrl, rendererFileUrl } from './security'
 const preloadPath = (name: 'index' | 'panel' | 'chip'): string =>
   join(__dirname, '../preload', `${name}.js`)
 
-const CHIP_WIDTH = 112
-const CHIP_HEIGHT = 44
+const CHIP_WIDTH = 120
+const CHIP_HEIGHT = 48
 
 const rendererIndex = (): string => join(__dirname, '../renderer/index.html')
 
@@ -194,7 +194,9 @@ export class WindowManager {
         sandbox: true
       }
     })
-    panel.setAlwaysOnTop(true, 'floating')
+    // 全屏应用（如 OneNote 全屏）会盖住 floating 级窗口，这里必须用
+    // screen-saver 级，和划词小框保持一致，面板才能出现在全屏内容之上。
+    panel.setAlwaysOnTop(true, 'screen-saver')
     panel.setMenu(null)
     this.panel = panel
 
@@ -204,13 +206,31 @@ export class WindowManager {
     hardenWindow(panel)
     loadPage(panel, 'panel')
     panel.once('ready-to-show', () => {
+      panel.setAlwaysOnTop(true, 'screen-saver')
       if (options.deferFocus) panel.showInactive()
       else {
         panel.show()
         panel.focus()
       }
+      panel.moveTop()
     })
     return panel
+  }
+
+  bringPanelToFront(): void {
+    const panel = this.panel
+    if (!panel || panel.isDestroyed()) return
+    panel.setAlwaysOnTop(true, 'screen-saver')
+    panel.moveTop()
+  }
+
+  focusPanel(): void {
+    const panel = this.panel
+    if (!panel || panel.isDestroyed() || !panel.isVisible()) return
+    panel.setAlwaysOnTop(true, 'screen-saver')
+    panel.show()
+    panel.focus()
+    panel.moveTop()
   }
 
   sendPanel(channel: string, payload?: unknown): void {

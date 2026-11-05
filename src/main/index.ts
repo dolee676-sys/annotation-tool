@@ -124,6 +124,7 @@ let activeSelection: ActiveSelection | null = null
 let activeAnnotation: ActiveAnnotation | null = null
 let pendingPanelInit: PanelInit | null = null
 let chipTimer: NodeJS.Timeout | null = null
+let chipShowId = 0
 let selftestResolve: (() => void) | null = null
 const contextFailures = new Map<string, number>()
 const CONTEXT_RETRY_MS = 2 * 60 * 1000
@@ -246,6 +247,7 @@ function handleSelection(raw: RawSelection): void {
   const preferAbove = anchor.y > display.workArea.y + display.workArea.height - 220
 
   activeSelection = { text, programName, truncated, anchor, preferAbove }
+  chipShowId += 1
   windows.showChip(anchor.x + 10, anchor.y + 8)
   debugSelection({
     phase: 'show',
@@ -653,6 +655,13 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
 
   annotation.context = context
   annotation.contextPending = false
+  // 上下文读取完成后不再需要保持“非激活”状态，主动把面板提到前台并聚焦。
+  // 全屏应用下窗口层级和焦点都可能被源应用压住，这一步是注解/提问可用的关键。
+  windows.bringPanelToFront()
+  windows.focusPanel()
+  setTimeout(() => {
+    if (activeAnnotation === annotation) windows.focusPanel()
+  }, 200)
   const contextPayload = {
     contextChars: context?.length ?? 0,
     contextEnabled: contextEligible,
@@ -1095,11 +1104,18 @@ function startServices(): void {
       const chipBounds = windows.chipBounds()
       if (chipBounds) {
         const inside =
-          dip.x >= chipBounds.x - 2 &&
-          dip.x <= chipBounds.x + chipBounds.width + 2 &&
-          dip.y >= chipBounds.y - 2 &&
-          dip.y <= chipBounds.y + chipBounds.height + 2
-        if (!inside) hideChip()
+          dip.x >= chipBounds.x - 8 &&
+          dip.x <= chipBounds.x + chipBounds.width + 8 &&
+          dip.y >= chipBounds.y - 8 &&
+          dip.y <= chipBounds.y + chipBounds.height + 8
+        if (!inside) {
+          // 延迟关闭，避免全屏/高 DPI 下坐标换算误差把「点在小框上」
+          // 误判成外部点击，导致按钮还没收到 click 就先被隐藏。
+          const showId = chipShowId
+          setTimeout(() => {
+            if (showId === chipShowId) hideChip()
+          }, 240)
+        }
       }
 
       const panel = windows.panel
@@ -1196,6 +1212,8 @@ async function refreshLocalModels(): Promise<void> {
 
 async function runSelfTest(): Promise<void> {
   console.log('[selftest] start')
+  // 自测用合成选区，不希望真实桌面的划词事件干扰截图与断言。
+  selection?.stop()
   const outDir = app.isPackaged
     ? join(app.getPath('userData'), 'selftest')
     : join(app.getAppPath(), 'selftest')

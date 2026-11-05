@@ -103,14 +103,14 @@ button {
 .chip-shell {
   position: relative;
   display: flex;
-  width: 108px;
-  height: 38px;
-  border: 1px solid rgba(103, 76, 43, 0.36);
+  width: 116px;
+  height: 42px;
+  border: 1px solid rgba(103, 76, 43, 0.3);
   border-radius: 999px;
-  background: linear-gradient(180deg, #f8eedc 0%, #efdfc4 100%);
+  background: linear-gradient(180deg, #fffdf8 0%, #f3eadb 100%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    inset 0 -2px 4px rgba(103, 76, 43, 0.12);
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -2px 5px rgba(103, 76, 43, 0.1);
   overflow: hidden;
   animation: chip-enter 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: transform, opacity;
@@ -123,10 +123,10 @@ button {
   justify-content: center;
   border: 0;
   background: transparent;
-  color: rgba(40, 28, 17, 0.82);
+  color: rgba(36, 25, 14, 0.88);
   cursor: pointer;
   font-family: var(--serif);
-  font-size: 17px;
+  font-size: 21px;
   font-weight: 600;
   line-height: 1;
   letter-spacing: 0.04em;
@@ -143,7 +143,7 @@ button {
 }
 
 .chip-half.right {
-  border-left: 1px solid rgba(103, 76, 43, 0.2);
+  border-left: 1px solid rgba(103, 76, 43, 0.16);
   border-radius: 0 999px 999px 0;
 }
 
@@ -250,14 +250,14 @@ button {
 .panel-title strong {
   display: block;
   font-family: var(--serif);
-  font-size: 14px;
+  font-size: 16px;
   letter-spacing: 0.12em;
   line-height: 1.1;
 }
 
 .panel-source {
   display: block;
-  font-size: 10.5px;
+  font-size: 11.5px;
   color: var(--muted);
   margin-top: 2px;
   white-space: nowrap;
@@ -282,13 +282,13 @@ button {
   border-radius: 7px;
   background: var(--surface-2);
   color: var(--ink-2);
-  font-size: 10.5px;
+  font-size: 11.5px;
   outline: none;
 }
 
 .icon-btn {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
   border: 1px solid transparent;
@@ -311,8 +311,8 @@ button {
 }
 
 .icon-btn svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 .icon-btn.pin.active {
@@ -369,7 +369,7 @@ button {
 }
 
 .quote-label {
-  font-size: 9.5px;
+  font-size: 10.5px;
   letter-spacing: 0.18em;
   color: var(--muted);
   margin-bottom: 4px;
@@ -383,7 +383,7 @@ button {
 .quote p {
   margin: 0;
   font-family: var(--serif);
-  font-size: 12.5px;
+  font-size: 15px;
   line-height: 1.7;
   color: var(--ink-2);
   white-space: pre-wrap;
@@ -403,8 +403,8 @@ button {
   min-height: 0;
   overflow: auto;
   padding: 14px 18px 10px;
-  font-size: 13px;
-  line-height: 1.78;
+  font-size: 15px;
+  line-height: 1.8;
   color: var(--ink-2);
 }
 
@@ -424,13 +424,13 @@ button {
 }
 
 .markdown h1 {
-  font-size: 17px;
+  font-size: 20px;
 }
 .markdown h2 {
-  font-size: 15.5px;
+  font-size: 18px;
 }
 .markdown h3 {
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .markdown p {
@@ -598,21 +598,21 @@ button {
 .followup-question span {
   display: block;
   margin-bottom: 3px;
-  font-size: 9.5px;
+  font-size: 10.5px;
   letter-spacing: 0.14em;
   color: var(--accent);
 }
 
 .followup-question p {
   margin: 0;
-  font-size: 12.5px;
-  line-height: 1.6;
+  font-size: 13.5px;
+  line-height: 1.65;
   color: var(--ink);
 }
 
 .block-meta {
   margin-top: 10px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
 }
 
@@ -629,15 +629,15 @@ button {
 .asked-question span {
   display: block;
   margin-bottom: 3px;
-  font-size: 9.5px;
+  font-size: 10.5px;
   letter-spacing: 0.14em;
   color: var(--accent);
 }
 
 .asked-question p {
   margin: 0;
-  font-size: 12.5px;
-  line-height: 1.6;
+  font-size: 13.5px;
+  line-height: 1.65;
   color: var(--ink);
 }
 
@@ -646,7 +646,7 @@ button {
   border: 1px dashed var(--line-strong);
   border-radius: 10px;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: 12.5px;
   line-height: 1.7;
   text-align: center;
 }
@@ -662,13 +662,13 @@ button {
 
 .ask-bar input {
   flex: 1;
-  height: 34px;
-  padding: 0 11px;
+  height: 38px;
+  padding: 0 12px;
   border: 1px solid var(--line-strong);
   border-radius: 9px;
   background: var(--paper);
   color: var(--ink);
-  font-size: 12.5px;
+  font-size: 14.5px;
   outline: none;
 }
 
@@ -677,13 +677,13 @@ button {
 }
 
 .ask-bar button {
-  height: 34px;
-  padding: 0 14px;
+  height: 38px;
+  padding: 0 16px;
   border: none;
   border-radius: 9px;
   background: var(--ink);
   color: var(--paper);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .ask-bar button:disabled {
@@ -702,7 +702,7 @@ button {
   height: 32px;
   padding: 0 16px;
   border-top: 1px solid var(--line);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--muted);
   flex: none;
 }
@@ -722,7 +722,7 @@ button {
   border-radius: 999px;
   background: var(--ok-soft);
   color: var(--ok);
-  font-size: 10px;
+  font-size: 10.5px;
 }
 
 .live-dot {
