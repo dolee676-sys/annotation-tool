@@ -79,7 +79,9 @@ export function formatCny(cost: number): string {
   return `¥${cost.toFixed(2)}`
 }
 
-export const USAGE_BASELINE_MODEL = 'deepseek-chat'
+// DeepSeek 当前官方模型是 deepseek-flash / deepseek-v4-pro；
+// deepseek-chat / deepseek-reasoner 是已停止使用的旧名，仅保留价格用于旧记录估算。
+export const USAGE_BASELINE_MODEL = 'deepseek-flash'
 const USAGE_BASELINE_COMBINED =
   MODEL_PRICES_CNY[USAGE_BASELINE_MODEL].in + MODEL_PRICES_CNY[USAGE_BASELINE_MODEL].out
 

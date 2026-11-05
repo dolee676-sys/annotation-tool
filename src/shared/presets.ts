@@ -52,7 +52,7 @@ const BASE_PRESETS: Array<Omit<ProviderPreset, 'priceIn' | 'priceOut' | 'guide'>
     kind: 'openai',
     baseUrl: 'https://api.deepseek.com/v1',
     local: false,
-    models: ['deepseek-flash', 'deepseek-v4-pro', 'deepseek-chat', 'deepseek-reasoner'],
+    models: ['deepseek-flash', 'deepseek-v4-pro'],
     keyUrl: 'https://platform.deepseek.com/api_keys',
     keyHint: 'sk-...'
   },
@@ -135,7 +135,7 @@ const PROVIDER_GUIDES: Record<string, ProviderGuide> = {
       '打开 platform.deepseek.com，注册并完成实名认证。',
       '在「API Keys」创建 Key，创建后立即复制保存（只完整显示一次）。',
       '在「充值」页面用支付宝/微信充少量金额，API 按 token 扣费。',
-      '回到这里粘贴 Key，选 deepseek-chat 或 deepseek-reasoner，保存并测试。'
+      '回到这里粘贴 Key，选 deepseek-flash 或 deepseek-v4-pro，保存并测试。'
     ],
     billingUrl: 'https://platform.deepseek.com/',
     billingLabel: '打开控制台充值',

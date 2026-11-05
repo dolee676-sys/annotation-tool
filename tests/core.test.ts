@@ -8,7 +8,7 @@ import {
 } from '../src/main/prompt.ts'
 import { isTrustedRendererUrl } from '../src/main/security.ts'
 import { summarizeUsage } from '../src/main/usageSummary.ts'
-import { isFreeModel } from '../src/shared/presets.ts'
+import { isFreeModel, presetById } from '../src/shared/presets.ts'
 import { estimateCostCny, formatCny, formatUsageMultiplier, priceForModel, usageMultiplier } from '../src/shared/pricing.ts'
 import { isNewerVersion } from '../src/shared/version.ts'
 import type { UsageRecord } from '../src/shared/types.ts'
@@ -50,7 +50,8 @@ test('按模型价目估算费用，本机模型为 0', () => {
   assert.equal(formatCny(0.0042), '¥0.0042')
 })
 
-test('消耗倍率以 deepseek-chat 为 1×，并覆盖本机/免费/自定义价格', () => {
+test('消耗倍率以 deepseek-flash 为 1×，并覆盖本机/免费/自定义价格', () => {
+  assert.deepEqual(presetById('deepseek')?.models, ['deepseek-flash', 'deepseek-v4-pro'])
   assert.equal(usageMultiplier({ model: 'deepseek-chat' }), 1)
   assert.ok(Math.abs((usageMultiplier({ model: 'qwen-turbo' }) ?? 0) - 0.09) < 0.0001)
   assert.equal(usageMultiplier({ model: 'glm-4-flash' }), 0)

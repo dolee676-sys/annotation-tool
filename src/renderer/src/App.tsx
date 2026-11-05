@@ -150,7 +150,7 @@ function MultiplierBadge({ value }: { value: number | null }): JSX.Element | nul
   return (
     <span
       className={`multiplier ${tone}`}
-      title="相对 deepseek-chat 的 token 价格；按每百万 tokens 输入+输出估算，实际以用量页为准"
+      title="相对 deepseek-flash 的 token 价格；按每百万 tokens 输入+输出估算，实际以用量页为准"
     >
       {formatUsageMultiplier(value)}
     </span>
@@ -1238,7 +1238,7 @@ export function App(): JSX.Element {
                     )}
                   </label>
                   <p className="hint">
-                    模型旁的倍率以 deepseek-chat 为 1.00×，精确到 0.01×；按每百万 tokens 输入+输出价格估算，数字越小越省，仅用于横向比较，实际费用以用量页为准。
+                    模型旁的倍率以 deepseek-flash 为 1.00×，精确到 0.01×；按每百万 tokens 输入+输出价格估算，数字越小越省，仅用于横向比较，实际费用以用量页为准。
                   </p>
                   <p className="hint">
                     免费或轻量模型响应快，适合简单注解；复杂提问和连续追问建议选能力更强的模型。
