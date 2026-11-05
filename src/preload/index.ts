@@ -28,6 +28,7 @@ const api = {
   listFavorites: () => ipcRenderer.invoke('favorites:list'),
   deleteFavorite: (id: string) => ipcRenderer.invoke('favorites:delete', id),
   clearFavorites: () => ipcRenderer.invoke('favorites:clear'),
+  toggleHistoryFavorite: (id: string) => ipcRenderer.invoke('favorites:toggle-history', id),
   checkUpdates: () => ipcRenderer.invoke('updates:check'),
   downloadUpdate: () => ipcRenderer.invoke('updates:download'),
   installUpdate: () => ipcRenderer.invoke('updates:install'),

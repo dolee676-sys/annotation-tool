@@ -170,6 +170,7 @@ export interface PanelDone {
 
 export interface HistoryRecord {
   id: string
+  conversationId?: string
   ts: number
   mode: PanelMode
   programName: string

@@ -58,6 +58,12 @@ interface AppRow {
   title?: string
 }
 
+interface HistoryThread {
+  key: string
+  items: HistoryRecord[]
+  latest: HistoryRecord
+}
+
 const NAV: Array<{ id: Tab; label: string; icon: string }> = [
   { id: 'apps', label: '应用范围', icon: 'apps' },
   { id: 'models', label: '模型服务', icon: 'chip' },
@@ -153,6 +159,10 @@ const multiplierSuffix = (value: number | null): string => {
 
 const normalizeAppName = (value: string): string =>
   value.trim().toLowerCase().replace(/\.exe$/i, '')
+
+function historyThreadKey(record: HistoryRecord): string {
+  return record.conversationId ?? `${record.programName}\u0000${record.text}`
+}
 
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts
@@ -271,11 +281,21 @@ export function App(): JSX.Element {
     if (tab === 'favorites' && favorites === null) void loadFavorites()
   }, [tab, favorites, loadFavorites])
 
+  useEffect(() => {
+    if (tab === 'history' && favorites === null) void loadFavorites()
+  }, [tab, favorites, loadFavorites])
+
   useEffect(
     () =>
       window.zhujie.on('favorites:changed', () => {
-        if (tabRef.current === 'favorites' && !document.hidden) void loadFavorites()
-        else favoritesDirty.current = true
+        if (
+          (tabRef.current === 'favorites' || tabRef.current === 'history') &&
+          !document.hidden
+        ) {
+          void loadFavorites()
+        } else {
+          favoritesDirty.current = true
+        }
       }),
     [loadFavorites]
   )
@@ -286,6 +306,10 @@ export function App(): JSX.Element {
       void loadHistory()
     }
     if (tab === 'favorites' && favoritesDirty.current) {
+      favoritesDirty.current = false
+      void loadFavorites()
+    }
+    if (tab === 'history' && favoritesDirty.current) {
       favoritesDirty.current = false
       void loadFavorites()
     }
@@ -474,6 +498,28 @@ export function App(): JSX.Element {
     }
   }
 
+  const copyHistoryThread = async (thread: HistoryThread): Promise<void> => {
+    const parts = thread.items.map((record) =>
+      record.question ? `问：${record.question}\n答：${record.answer}` : record.answer
+    )
+    await window.zhujie.writeClipboard(parts.join('\n\n---\n\n'))
+    flash('已复制完整对话')
+  }
+
+  const toggleHistoryFavorite = async (record: HistoryRecord): Promise<void> => {
+    try {
+      const result = await window.zhujie.toggleHistoryFavorite(record.id)
+      if (!result.ok) {
+        flash(result.error ?? '收藏失败')
+        return
+      }
+      await loadFavorites()
+      flash(result.favorited ? '已收藏这条问答' : '已取消收藏')
+    } catch (error) {
+      flash(readableError(error))
+    }
+  }
+
   const restartHook = async (): Promise<void> => {
     setHookBusy(true)
     try {
@@ -637,29 +683,44 @@ export function App(): JSX.Element {
     )
   }, [appRows, appQuery])
 
-  const filteredHistory = useMemo(() => {
-    const list = historyItems ?? []
+  const historyThreads = useMemo<HistoryThread[]>(() => {
+    const map = new Map<string, HistoryRecord[]>()
+    for (const record of historyItems ?? []) {
+      const key = historyThreadKey(record)
+      const list = map.get(key)
+      if (list) list.push(record)
+      else map.set(key, [record])
+    }
+    return Array.from(map.entries())
+      .map(([key, items]) => {
+        const sorted = [...items].sort((a, b) => a.ts - b.ts)
+        return { key, items: sorted, latest: sorted[sorted.length - 1] }
+      })
+      .sort((a, b) => b.latest.ts - a.latest.ts)
+  }, [historyItems])
+
+  const filteredThreads = useMemo(() => {
     const query = historyQuery.trim().toLowerCase()
-    if (!query) return list
-    return list.filter(
-      (record) =>
-        record.text.toLowerCase().includes(query) ||
-        (record.question ?? '').toLowerCase().includes(query) ||
-        record.answer.toLowerCase().includes(query) ||
-        record.programName.toLowerCase().includes(query) ||
-        record.model.toLowerCase().includes(query)
+    if (!query) return historyThreads
+    return historyThreads.filter((thread) =>
+      thread.items.some(
+        (record) =>
+          record.text.toLowerCase().includes(query) ||
+          (record.question ?? '').toLowerCase().includes(query) ||
+          record.answer.toLowerCase().includes(query) ||
+          record.programName.toLowerCase().includes(query) ||
+          record.model.toLowerCase().includes(query)
+      )
     )
-  }, [historyItems, historyQuery])
+  }, [historyThreads, historyQuery])
 
-  const selectedHistory = useMemo(
-    () => filteredHistory.find((record) => record.id === selectedHistoryId) ?? filteredHistory[0] ?? null,
-    [filteredHistory, selectedHistoryId]
+  const selectedThread = useMemo(
+    () =>
+      filteredThreads.find((thread) => thread.items.some((record) => record.id === selectedHistoryId)) ??
+      filteredThreads[0] ??
+      null,
+    [filteredThreads, selectedHistoryId]
   )
-
-  const historyHtml = useMemo(() => {
-    if (!selectedHistory) return ''
-    return DOMPurify.sanitize(marked.parse(selectedHistory.answer) as string)
-  }, [selectedHistory])
 
   if (!state) {
     return <div className="boot">正在读取本机配置…</div>
@@ -1662,80 +1723,120 @@ export function App(): JSX.Element {
                 <div className="panel-card empty tall">
                   还没有历史记录。选中文字做一次注解或提问后，这里会出现记录。
                 </div>
-              ) : filteredHistory.length === 0 ? (
+              ) : filteredThreads.length === 0 ? (
                 <div className="panel-card empty tall">没有匹配的记录，换个关键词试试。</div>
               ) : (
                 <div className="history-layout">
                   <div className="history-list">
-                    {filteredHistory.map((record) => (
+                    {filteredThreads.map((thread) => (
                       <button
-                        key={record.id}
+                        key={thread.key}
                         className={
-                          selectedHistory?.id === record.id ? 'history-item active' : 'history-item'
+                          selectedThread?.key === thread.key ? 'history-item active' : 'history-item'
                         }
-                        onClick={() => setSelectedHistoryId(record.id)}
+                        onClick={() => setSelectedHistoryId(thread.latest.id)}
                       >
                         <div className="history-item-top">
-                          <span className={record.mode === 'ask' ? 'history-mode ask' : 'history-mode'}>
-                            {record.mode === 'ask' ? '提问' : '注解'}
+                          <span
+                            className={
+                              thread.latest.mode === 'ask' ? 'history-mode ask' : 'history-mode'
+                            }
+                          >
+                            {thread.latest.mode === 'ask' ? '提问' : '注解'}
                           </span>
-                          <span className="muted">{fmtTime(record.ts)}</span>
+                          <span className="muted">{fmtTime(thread.latest.ts)}</span>
                         </div>
-                        <div className="history-snippet">{record.question || record.text}</div>
+                        <div className="history-snippet">
+                          {thread.latest.question || thread.latest.text}
+                        </div>
                         <div className="history-meta">
-                          {record.programName} · {record.model}
+                          {thread.latest.programName} · {thread.latest.model}
+                          {thread.items.length > 1 ? ` · ${thread.items.length} 轮问答` : ''}
                         </div>
                       </button>
                     ))}
                   </div>
 
-                  {selectedHistory && (
+                  {selectedThread && (
                     <div className="history-detail">
                       <div className="history-detail-head">
                         <div>
-                          <strong>{selectedHistory.mode === 'ask' ? '提问' : '注解'}</strong>
+                          <strong>连续对话 · {selectedThread.items.length} 轮</strong>
                           <span className="muted">
-                            {fmtTime(selectedHistory.ts)} · {selectedHistory.programName} ·{' '}
-                            {selectedHistory.model}
+                            {fmtTime(selectedThread.latest.ts)} ·{' '}
+                            {selectedThread.latest.programName} · {selectedThread.latest.model}
                           </span>
                         </div>
                         <div className="history-actions">
                           <button
                             className="link"
-                            onClick={() => {
-                              void window.zhujie.writeClipboard(selectedHistory.answer)
-                              flash('已复制回答')
-                            }}
+                            onClick={() => void copyHistoryThread(selectedThread)}
                           >
-                            复制回答
-                          </button>
-                          <button
-                            className="link danger"
-                            onClick={() => void removeHistory(selectedHistory.id)}
-                          >
-                            删除
+                            复制完整对话
                           </button>
                         </div>
                       </div>
 
-                      <div className="history-quote">{selectedHistory.text}</div>
-                      {selectedHistory.question && (
-                        <div className="asked-question">
-                          <span>你的问题</span>
-                          <p>{selectedHistory.question}</p>
-                        </div>
+                      {!selectedThread.items.some((record) => record.mode === 'annotate') && (
+                        <div className="history-quote">{selectedThread.latest.text}</div>
                       )}
-                      <div
-                        className="history-answer markdown"
-                        dangerouslySetInnerHTML={{ __html: historyHtml }}
-                      />
-                      <div className="history-foot">
-                        {selectedHistory.totalTokens.toLocaleString()} tokens ·{' '}
-                        {formatCny(selectedHistory.cost)}
-                        {selectedHistory.contextChars
-                          ? ` · 结合上下文 ${selectedHistory.contextChars} 字`
-                          : ''}
-                      </div>
+
+                      {selectedThread.items.map((record) => {
+                        const favorited = Boolean(
+                          favorites?.some((item) => item.turnId === record.id)
+                        )
+                        return (
+                          <div className="history-thread-turn" key={record.id}>
+                            <div className="history-thread-head">
+                              <span
+                                className={
+                                  record.mode === 'ask' ? 'history-mode ask' : 'history-mode'
+                                }
+                              >
+                                {record.mode === 'ask' ? '追问' : '注解'}
+                              </span>
+                              <span className="muted">{fmtTime(record.ts)}</span>
+                              <span className="foot-spacer" />
+                              <div className="history-actions">
+                                <button
+                                  className="link"
+                                  onClick={() => void toggleHistoryFavorite(record)}
+                                >
+                                  {favorited ? '已收藏' : '收藏'}
+                                </button>
+                                <button
+                                  className="link danger"
+                                  onClick={() => void removeHistory(record.id)}
+                                >
+                                  删除
+                                </button>
+                              </div>
+                            </div>
+                            {record.mode === 'annotate' && (
+                              <div className="history-quote">{record.text}</div>
+                            )}
+                            {record.mode === 'ask' && (
+                              <div className="asked-question">
+                                <span>你的问题</span>
+                                <p>{record.question}</p>
+                              </div>
+                            )}
+                            <div
+                              className="history-answer markdown"
+                              dangerouslySetInnerHTML={{
+                                __html: DOMPurify.sanitize(marked.parse(record.answer) as string)
+                              }}
+                            />
+                            <div className="history-foot">
+                              {record.totalTokens.toLocaleString()} tokens ·{' '}
+                              {formatCny(record.cost)}
+                              {record.contextChars
+                                ? ` · 结合上下文 ${record.contextChars} 字`
+                                : ''}
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>

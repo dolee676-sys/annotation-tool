@@ -78,6 +78,7 @@ interface ConversationTurn {
 
 interface ActiveAnnotation {
   mode: PanelMode
+  conversationId: string
   question?: string
   context?: string
   text: string
@@ -378,8 +379,9 @@ async function runAnnotationRequest(
       fallbackOut: provider.priceOut,
       preferFallback: !provider.builtin
     })
+    const recordId = history.newId()
     a.turns.push({
-      id: history.newId(),
+      id: recordId,
       question: options.historyMode === 'ask' ? options.question : undefined,
       answer: result.text,
       providerName: provider.name,
@@ -408,7 +410,8 @@ async function runAnnotationRequest(
     })
     if (s.historyEnabled) {
       history.add({
-        id: history.newId(),
+        id: recordId,
+        conversationId: a.conversationId,
         ts,
         mode: options.historyMode,
         programName: a.programName,
@@ -597,6 +600,7 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
 
   const annotation: ActiveAnnotation = {
     mode,
+    conversationId: history.newId(),
     context: undefined,
     text: sel.text,
     programName: sel.programName,
@@ -921,6 +925,39 @@ function registerIpc(): void {
       throw new Error('清空收藏写入磁盘失败，请检查磁盘空间后重试。')
     }
     return favorites.list()
+  })
+  handle('favorites:toggle-history', (_event, id: string): FavoriteToggleResult => {
+    const record = history.get(String(id))
+    if (!record) return { ok: false, favorited: false, error: '这条历史记录不存在。' }
+    const existing = favorites.findByTurnId(record.id)
+    if (existing) {
+      if (!favorites.remove(existing.id)) {
+        return { ok: false, favorited: true, id: existing.id, error: '收藏写入磁盘失败，请检查磁盘空间。' }
+      }
+      windows.settings?.webContents.send('favorites:changed')
+      return { ok: true, favorited: false, id: existing.id }
+    }
+
+    const item: FavoriteRecord = {
+      id: favorites.newId(),
+      turnId: record.id,
+      ts: Date.now(),
+      mode: record.mode,
+      programName: record.programName,
+      providerName: record.providerName,
+      model: record.model,
+      text: record.text,
+      question: record.question,
+      answer: record.answer,
+      contextChars: record.contextChars,
+      totalTokens: record.totalTokens,
+      cost: record.cost
+    }
+    if (!favorites.add(item)) {
+      return { ok: false, favorited: false, error: '收藏写入磁盘失败，请检查磁盘空间。' }
+    }
+    windows.settings?.webContents.send('favorites:changed')
+    return { ok: true, favorited: true, id: item.id }
   })
   handle('hook:restart', () => {
     selection?.restart()
@@ -1494,6 +1531,30 @@ async function runSelfTest(): Promise<void> {
     await clickNav(2)
     await captureWindow(windows.settings, join(outDir, 'prompt.png'))
     await clickNav(3)
+    if (settingsContents) {
+      await new Promise((r) => setTimeout(r, 400))
+      const threadInfo = await settingsContents.executeJavaScript(
+        "(() => ({ count: document.querySelectorAll('.history-item').length, texts: Array.from(document.querySelectorAll('.history-item')).map((el) => el.textContent || '') }))()"
+      )
+      if (
+        threadInfo.count !== 2 ||
+        !threadInfo.texts.every((text: string) => text.includes('2 轮问答'))
+      ) {
+        throw new Error('历史追问未按对话合并')
+      }
+      console.log('SELFTEST_HISTORY_THREAD', JSON.stringify(threadInfo))
+      await settingsContents.executeJavaScript(
+        "document.querySelector('.history-thread-turn .history-actions .link')?.click()"
+      )
+      await new Promise((r) => setTimeout(r, 500))
+      if (favorites.list().length !== 2) throw new Error('历史记录收藏未生效')
+      await settingsContents.executeJavaScript(
+        "document.querySelector('.history-thread-turn .history-actions .link')?.click()"
+      )
+      await new Promise((r) => setTimeout(r, 500))
+      if (favorites.list().length !== 1) throw new Error('历史记录取消收藏未生效')
+      console.log('SELFTEST_HISTORY_FAVORITE', JSON.stringify({ count: favorites.list().length }))
+    }
     await captureWindow(windows.settings, join(outDir, 'history.png'))
     await clickNav(4)
     await new Promise((r) => setTimeout(r, 500))

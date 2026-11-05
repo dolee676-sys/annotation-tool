@@ -57,6 +57,10 @@ export class HistoryStore {
     return [...this.records]
   }
 
+  get(id: string): HistoryRecord | undefined {
+    return this.records.find((record) => record.id === id)
+  }
+
   remove(id: string): boolean {
     return this.removeMany(new Set([id]))
   }

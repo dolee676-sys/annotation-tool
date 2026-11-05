@@ -47,6 +47,7 @@ export interface ZhujieApi {
   listFavorites(): Promise<FavoriteRecord[]>
   deleteFavorite(id: string): Promise<FavoriteRecord[]>
   clearFavorites(): Promise<FavoriteRecord[]>
+  toggleHistoryFavorite(id: string): Promise<FavoriteToggleResult>
   checkUpdates(): Promise<UpdateStatus>
   downloadUpdate(): Promise<UpdateStatus>
   installUpdate(): Promise<{ ok: boolean; error?: string }>

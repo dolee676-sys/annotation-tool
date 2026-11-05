@@ -2331,6 +2331,27 @@ button.link {
   margin: 0 0 10px;
 }
 
+.history-thread-turn {
+  padding: 12px 0;
+  border-top: 1px dashed var(--line);
+}
+
+.history-thread-turn:first-of-type {
+  padding-top: 4px;
+  border-top: none;
+}
+
+.history-thread-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.history-thread-head .history-actions {
+  margin-left: auto;
+}
+
 .history-answer {
   font-size: 12.5px;
   line-height: 1.8;
