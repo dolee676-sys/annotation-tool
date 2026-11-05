@@ -24,6 +24,8 @@ export function isQuestionLike(text: string): boolean {
   const value = text.trim()
   if (!value) return false
   if (/[?？]\s*$/.test(value)) return true
+  if (/(吗|呢|么|嘛)\s*$/.test(value)) return true
+  if (/(是不是|能不能|可不可以|有没有|要不要|对不对)/.test(value)) return true
   if (value.length > 80) return false
   return CN_QUESTION_START.test(value) || EN_QUESTION_START.test(value)
 }

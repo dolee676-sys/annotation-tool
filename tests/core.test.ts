@@ -135,6 +135,7 @@ test('注解提示词带安全前缀，并明确只解释选中文字', () => {
 test('点注解按钮但选中的是问题时，先回答再解释', () => {
   assert.equal(isQuestionLike('为什么 Bean 要先注入再初始化？'), true)
   assert.equal(isQuestionLike('如何理解 init 方法'), true)
+  assert.equal(isQuestionLike('这样配置可以吗'), true)
   assert.equal(isQuestionLike('init()'), false)
 
   const system = buildSystemPrompt({
