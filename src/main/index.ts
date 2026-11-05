@@ -7,7 +7,7 @@ import { compressHistory } from './compress'
 import { getSelectionContext } from './context'
 import { FavoriteStore } from './favorites'
 import { HISTORY_REWRITE_BATCH, HistoryStore } from './history'
-import { buildSystemPrompt, buildUserMessage, markSelection } from './prompt'
+import { buildSystemPrompt, buildUserMessage, isQuestionLike, markSelection } from './prompt'
 import { estimateCostCny, usageMultiplier } from '../shared/pricing'
 import { isFreeModel } from '../shared/presets'
 import { SelectionService, isUsablePoint, toDipPoint, type Point, type RawSelection } from './selection'
@@ -481,7 +481,8 @@ async function startAnnotation(): Promise<void> {
     system: buildSystemPrompt({
       mode: 'annotate',
       annotatePrompt: s.prompt,
-      hasContext: Boolean(a.context)
+      hasContext: Boolean(a.context),
+      questionLike: isQuestionLike(a.text)
     }),
     user: buildUserMessage({
       mode: 'annotate',
@@ -1484,6 +1485,11 @@ async function runSelfTest(): Promise<void> {
       await settingsContents.executeJavaScript("document.querySelectorAll('.mode')[1]?.click()")
       await new Promise((r) => setTimeout(r, 2500))
       await captureWindow(windows.settings, join(outDir, 'models-cloud.png'))
+      await settingsContents.executeJavaScript(
+        "const g=document.querySelector('.provider-guide'); g?.setAttribute('open',''); g?.scrollIntoView({block:'center'})"
+      )
+      await new Promise((r) => setTimeout(r, 500))
+      await captureWindow(windows.settings, join(outDir, 'provider-guide.png'))
     }
     await clickNav(2)
     await captureWindow(windows.settings, join(outDir, 'prompt.png'))

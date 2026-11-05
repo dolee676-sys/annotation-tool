@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildSystemPrompt, buildUserMessage, markSelection } from '../src/main/prompt.ts'
+import {
+  buildSystemPrompt,
+  buildUserMessage,
+  isQuestionLike,
+  markSelection
+} from '../src/main/prompt.ts'
 import { isTrustedRendererUrl } from '../src/main/security.ts'
 import { summarizeUsage } from '../src/main/usageSummary.ts'
 import { isFreeModel } from '../src/shared/presets.ts'
@@ -125,6 +130,30 @@ test('注解提示词带安全前缀，并明确只解释选中文字', () => {
   assert.match(prompt, /不是它所在的整行\/整段代码/)
   assert.match(prompt, /上下文只用于理解【选中】部分/)
   assert.match(prompt, /请注解。/)
+})
+
+test('点注解按钮但选中的是问题时，先回答再解释', () => {
+  assert.equal(isQuestionLike('为什么 Bean 要先注入再初始化？'), true)
+  assert.equal(isQuestionLike('如何理解 init 方法'), true)
+  assert.equal(isQuestionLike('init()'), false)
+
+  const system = buildSystemPrompt({
+    mode: 'annotate',
+    annotatePrompt: 'x',
+    hasContext: true,
+    questionLike: true
+  })
+  assert.match(system, /先直接回答这个问题/)
+
+  const message = buildUserMessage({
+    mode: 'annotate',
+    text: '为什么 Bean 要先注入再初始化？',
+    context: '注入依赖后再执行初始化方法。',
+    contextChars: 300
+  })
+  assert.match(message, /\*\*回答\*\*/)
+  assert.match(message, /\*\*解释\*\*/)
+  assert.ok(message.indexOf('**回答**') < message.indexOf('**解释**'))
 })
 
 test('上下文注解把选中文字放在文章片段之前，避免模型转去解释上下文', () => {

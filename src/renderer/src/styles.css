@@ -1351,6 +1351,49 @@ button.link {
   outline: none;
 }
 
+.provider-guide {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+
+.provider-guide summary {
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.guide-steps {
+  margin: 8px 0 0 18px;
+  padding: 0;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+
+.guide-steps li {
+  margin: 0 0 5px;
+}
+
+.guide-steps code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: 0.9em;
+}
+
+.guide-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.guide-links a {
+  color: var(--accent);
+  font-size: 12.5px;
+}
+
 .setup-actions {
   display: flex;
   align-items: center;

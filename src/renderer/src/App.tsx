@@ -1221,6 +1221,37 @@ export function App(): JSX.Element {
                       {presetNotice.message}
                     </p>
                   )}
+
+                  <details className="mini-advanced provider-guide">
+                    <summary>
+                      怎么配置 {activePreset.name}
+                      {activePreset.local ? '' : '、怎么购买 tokens'}
+                    </summary>
+                    <ol className="guide-steps">
+                      {activePreset.guide.steps.map((step) => (
+                        <li key={step}>{step}</li>
+                      ))}
+                    </ol>
+                    <div className="guide-links">
+                      {activePreset.keyUrl && (
+                        <a href={activePreset.keyUrl} target="_blank" rel="noreferrer">
+                          获取 API Key
+                        </a>
+                      )}
+                      {activePreset.guide.billingUrl && (
+                        <a
+                          href={activePreset.guide.billingUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {activePreset.guide.billingLabel ?? '充值 / 购买 tokens'}
+                        </a>
+                      )}
+                    </div>
+                    {activePreset.guide.note && (
+                      <p className="hint">{activePreset.guide.note}</p>
+                    )}
+                  </details>
                 </div>
               )}
 
@@ -1229,6 +1260,21 @@ export function App(): JSX.Element {
                 <p className="hint">
                   只有在使用公司内网、自建代理，或上面的服务商里没有你要的接口时，才需要改这里。
                 </p>
+
+                <details className="mini-advanced provider-guide">
+                  <summary>怎么配置自定义接口、怎么购买 tokens</summary>
+                  <ol className="guide-steps">
+                    <li>向服务商获取三样东西：Base URL、API Key、模型名。</li>
+                    <li>
+                      Base URL 一般以 <code>/v1</code> 结尾；不确定时看服务商文档。
+                    </li>
+                    <li>在服务商控制台充值或购买 tokens 后，把 Key 和模型名填到上面的表单。</li>
+                    <li>保存后点「测试」，能拉到模型列表就说明配置成功。</li>
+                  </ol>
+                  <p className="hint">
+                    如果是中转或聚合服务，确认它兼容 OpenAI 协议；不要购买来源不明的低价 Key。
+                  </p>
+                </details>
 
                 {editor && (
                   <div className="panel-card editor">
