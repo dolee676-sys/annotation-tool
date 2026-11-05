@@ -13,8 +13,8 @@ import type {
   UsageSummary
 } from '../../shared/types'
 import { DEFAULT_PROMPT, HISTORY_KEEP_RECENT, HISTORY_LIMIT } from '../../shared/types'
-import { PROVIDER_PRESETS, isFreeModel, isLocalAddress, presetById } from '../../shared/presets'
-import { formatCny } from '../../shared/pricing'
+import { PROVIDER_PRESETS, isLocalAddress, presetById } from '../../shared/presets'
+import { formatCny, formatUsageMultiplier, usageMultiplier } from '../../shared/pricing'
 
 marked.setOptions({ gfm: true, breaks: true })
 
@@ -124,6 +124,25 @@ const fmtTime = (ts: number): string =>
 const readableError = (error: unknown): string => {
   const raw = error instanceof Error ? error.message : String(error)
   return raw.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+}
+
+function MultiplierBadge({ value }: { value: number | null }): JSX.Element | null {
+  if (value === null) return null
+  const tone = value === 0 ? 'free' : value < 0.5 ? 'low' : value <= 2 ? 'mid' : 'high'
+  return (
+    <span
+      className={`multiplier ${tone}`}
+      title="相对 deepseek-chat 的 token 价格；按每百万 tokens 输入+输出估算，实际以用量页为准"
+    >
+      {formatUsageMultiplier(value)}
+    </span>
+  )
+}
+
+const multiplierSuffix = (value: number | null): string => {
+  if (value === null) return ''
+  if (value === 0) return '（免费）'
+  return `（${formatUsageMultiplier(value)}）`
 }
 
 const normalizeAppName = (value: string): string =>
@@ -534,11 +553,14 @@ export function App(): JSX.Element {
     ? isLocalAddress(activeProviderInfo.baseUrl)
     : settings.localOnly
   const modeMismatch = Boolean(activeProviderInfo) && activeIsLocal !== settings.localOnly
-  const activeModelFree = isFreeModel(
-    activeProviderInfo?.presetId,
-    settings.defaultModel,
-    activeIsLocal
-  )
+  const activeMultiplier = activeProviderInfo
+    ? usageMultiplier({
+        model: settings.defaultModel,
+        local: activeIsLocal,
+        fallbackIn: activeProviderInfo.priceIn,
+        fallbackOut: activeProviderInfo.priceOut
+      })
+    : null
 
   async function changeMode(local: boolean): Promise<void> {
     if (local === settings.localOnly) return
@@ -862,9 +884,7 @@ export function App(): JSX.Element {
                   <strong>{activeLabel}</strong>
                   <span className="active-model-name">
                     {settings.defaultModel || '还没有选择模型'}
-                    {activeModelFree && settings.defaultModel && (
-                      <span className="free-badge">免费</span>
-                    )}
+                    {settings.defaultModel && <MultiplierBadge value={activeMultiplier} />}
                   </span>
                   {modeMismatch && (
                     <span className="active-warn">
@@ -985,7 +1005,14 @@ export function App(): JSX.Element {
                         {activeChoices.map((model) => (
                           <option key={model} value={model}>
                             {model}
-                            {isFreeModel(activePreset.id, model, activePreset.local) ? '（免费）' : ''}
+                            {multiplierSuffix(
+                              usageMultiplier({
+                                model,
+                                local: activePreset.local,
+                                fallbackIn: activeProvider.priceIn,
+                                fallbackOut: activeProvider.priceOut
+                              })
+                            )}
                           </option>
                         ))}
                       </select>
@@ -997,6 +1024,9 @@ export function App(): JSX.Element {
                       </div>
                     )}
                   </label>
+                  <p className="hint">
+                    模型旁的倍率以 deepseek-chat 为 1×，按每百万 tokens 输入+输出价格估算；数字越小越省，仅用于横向比较，实际费用以用量页为准。
+                  </p>
 
                   {!activePreset.local && (
                     <details className="mini-advanced">
@@ -1883,9 +1913,14 @@ function ProviderCard({
               title="设为默认模型"
             >
               {model}
-              {isFreeModel(provider.presetId, model, local) && (
-                <span className="free-badge">免费</span>
-              )}
+              <MultiplierBadge
+                value={usageMultiplier({
+                  model,
+                  local,
+                  fallbackIn: provider.priceIn,
+                  fallbackOut: provider.priceOut
+                })}
+              />
             </button>
           ))
         )}

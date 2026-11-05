@@ -14,7 +14,7 @@
 
 > 适用于 Windows 10/11 64 位。绿色免安装版，解压即用。
 >
-> 如果 Releases 页面暂时没有可下载文件，说明正式 Release 还没发布；可以先用文末「从源码运行」的方式启动。
+> 下载最新版：[Releases](https://github.com/dolee676-sys/annotation-tool/releases/latest)。
 
 1. 打开 [Releases](https://github.com/dolee676-sys/annotation-tool/releases)，下载 `zhujie-win-x64.zip`。
 2. 解压到 `D:\Apps\zhujie`（或任意目录）。
@@ -59,6 +59,8 @@
 DeepSeek、通义千问、Kimi、OpenAI 都在列表里。选服务商、粘贴 API Key、选模型、点「保存并测试」即可。费用和免费额度以服务商页面为准。
 
 > 云端模式会把选中的文字发送给对应服务商，不要用于敏感内容。带「免费」标识的模型由服务商提供免费额度，具体额度和有效期可能变化。
+
+选择模型时，旁边会显示消耗倍率：以 `deepseek-chat` 为 1×，按每百万 tokens 的输入+输出价格估算。数字越小越省，本机模型显示「免费」。倍率只用于横向比较，实际费用以「用量统计」和服务商账单为准。
 
 ## 怎么用
 
@@ -144,7 +146,7 @@ DeepSeek、通义千问、Kimi、OpenAI 都在列表里。选服务商、粘贴 
 
 ## 进阶设置
 
-- **模型服务**：切换本机/云端、更换模型、查看免费标识。
+- **模型服务**：切换本机/云端、更换模型、查看免费标识与消耗倍率。
 - **注解提示词**：修改注解风格、开关上下文、调整上下文长度和单次发送上限。
 - **应用范围**：全部应用 / 仅指定应用，支持搜索进程名。
 - **历史记录**：搜索、复制、删除；满 1000 条后压缩成综合摘要。
@@ -243,7 +245,7 @@ tests/ai.test.ts         OpenAI / Ollama 解析、401、坏行、中止测试
 <summary>开发验证记录（2026-11-04 ~ 11-05，点开）</summary>
 
 - `npm run typecheck`：通过
-- `npm test`：12 项通过（价目、免费标识、选区标记、多轮追问、系统提示词、导航信任、旧用量 latencyMs 守卫、OpenAI SSE、Ollama NDJSON、401、坏行、中止、模型列表）
+- `npm test`：13 项通过（价目、消耗倍率、免费标识、选区标记、多轮追问、系统提示词、导航信任、旧用量 latencyMs 守卫、OpenAI SSE、Ollama NDJSON、401、坏行、中止、模型列表）
 - `npm run build`：通过（主进程 / 3 个 preload / 渲染进程）
 - `npm run selftest`：通过
   - 模拟划词 → 小框 → 面板 → 流式输出 → 入库

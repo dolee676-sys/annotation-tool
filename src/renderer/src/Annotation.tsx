@@ -2,7 +2,7 @@ import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PanelDone, PanelInit, PanelMode } from '../../shared/types'
-import { formatCny } from '../../shared/pricing'
+import { formatCny, formatUsageMultiplier } from '../../shared/pricing'
 
 marked.setOptions({ gfm: true, breaks: true })
 
@@ -219,7 +219,11 @@ export function Panel(): JSX.Element {
   const groups = useMemo(() => {
     const map = new Map<
       string,
-      { providerId: string; name: string; models: Array<{ name: string; free: boolean }> }
+      {
+        providerId: string
+        name: string
+        models: Array<{ name: string; free: boolean; multiplier?: number | null }>
+      }
     >()
     for (const option of init?.options ?? []) {
       const group = map.get(option.providerId) ?? {
@@ -228,7 +232,11 @@ export function Panel(): JSX.Element {
         models: []
       }
       if (!group.models.some((item) => item.name === option.model)) {
-        group.models.push({ name: option.model, free: Boolean(option.free) })
+        group.models.push({
+          name: option.model,
+          free: Boolean(option.free),
+          multiplier: option.multiplier
+        })
       }
       map.set(option.providerId, group)
     }
@@ -336,13 +344,17 @@ export function Panel(): JSX.Element {
                     key={`${group.providerId}::${item.name}`}
                     value={`${group.providerId}::${item.name}`}
                   >
-                    {item.free ? `${item.name}（免费）` : item.name}
+                    {item.name}
+                    {item.free || item.multiplier === 0
+                      ? '（免费）'
+                      : item.multiplier != null
+                        ? `（${formatUsageMultiplier(item.multiplier)}）`
+                        : ''}
                   </option>
                 ))}
               </optgroup>
             ))}
           </select>
-          {current?.free && <span className="free-badge">免费</span>}
           <button
             className={pinnedOpen ? 'icon-btn pin active' : 'icon-btn pin'}
             title={pinnedOpen ? '取消钉住，点外部可关闭' : '钉在当前屏幕上'}

@@ -1713,6 +1713,39 @@ button.link {
   padding: 0 4px;
 }
 
+.multiplier {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 5px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-family: var(--sans);
+  font-size: 8.5px;
+  font-weight: 500;
+  line-height: 1.7;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.multiplier.free,
+.multiplier.low {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.multiplier.high {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.chip-model .multiplier {
+  margin-left: 4px;
+  padding: 0 4px;
+}
+
 .provider-actions {
   display: flex;
   gap: 5px;

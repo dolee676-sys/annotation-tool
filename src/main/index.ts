@@ -7,7 +7,7 @@ import { compressHistory } from './compress'
 import { getSelectionContext } from './context'
 import { HISTORY_REWRITE_BATCH, HistoryStore } from './history'
 import { buildSystemPrompt, buildUserMessage, markSelection } from './prompt'
-import { estimateCostCny } from '../shared/pricing'
+import { estimateCostCny, usageMultiplier } from '../shared/pricing'
 import { isFreeModel } from '../shared/presets'
 import { SelectionService, isUsablePoint, toDipPoint, type Point, type RawSelection } from './selection'
 import { isTrustedRendererUrl, rendererFileUrl } from './security'
@@ -148,22 +148,31 @@ function buildModelOptions(currentProviderId: string, currentModel: string): Pan
         providerId: provider.id,
         providerName: provider.name,
         model,
-        free: isFreeModel(provider.presetId, model, local)
+        free: isFreeModel(provider.presetId, model, local),
+        multiplier: usageMultiplier({
+          model,
+          local,
+          fallbackIn: provider.priceIn,
+          fallbackOut: provider.priceOut
+        })
       })
     }
   }
   if (!options.some((o) => o.providerId === currentProviderId && o.model === currentModel)) {
     const provider = settings.getProvider(currentProviderId)
     if (provider && currentModel) {
+      const local = isLocalBaseUrl(provider.baseUrl)
       options.unshift({
         providerId: provider.id,
         providerName: provider.name,
         model: currentModel,
-        free: isFreeModel(
-          provider.presetId ?? provider.id,
-          currentModel,
-          isLocalBaseUrl(provider.baseUrl)
-        )
+        free: isFreeModel(provider.presetId ?? provider.id, currentModel, local),
+        multiplier: usageMultiplier({
+          model: currentModel,
+          local,
+          fallbackIn: provider.priceIn,
+          fallbackOut: provider.priceOut
+        })
       })
     }
   }

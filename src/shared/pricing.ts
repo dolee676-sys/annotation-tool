@@ -58,3 +58,33 @@ export function formatCny(cost: number): string {
   if (cost < 1) return `¥${cost.toFixed(3)}`
   return `¥${cost.toFixed(2)}`
 }
+
+export const USAGE_BASELINE_MODEL = 'deepseek-chat'
+const USAGE_BASELINE_COMBINED =
+  MODEL_PRICES_CNY[USAGE_BASELINE_MODEL].in + MODEL_PRICES_CNY[USAGE_BASELINE_MODEL].out
+
+export function usageMultiplier(options: {
+  model: string
+  local?: boolean
+  fallbackIn?: number
+  fallbackOut?: number
+}): number | null {
+  if (options.local) return 0
+  const known = priceForModel(options.model)
+  if (known) {
+    const combined = known.in + known.out
+    return combined <= 0 ? 0 : combined / USAGE_BASELINE_COMBINED
+  }
+  const fallbackIn = Math.max(0, options.fallbackIn ?? 0)
+  const fallbackOut = Math.max(0, options.fallbackOut ?? 0)
+  const combined = fallbackIn + fallbackOut
+  return combined <= 0 ? null : combined / USAGE_BASELINE_COMBINED
+}
+
+export function formatUsageMultiplier(value: number | null): string {
+  if (value === null) return '—'
+  if (value === 0) return '免费'
+  if (value < 0.1) return '<0.1×'
+  if (value < 10) return `${Number(value.toFixed(1))}×`
+  return `${Math.round(value)}×`
+}

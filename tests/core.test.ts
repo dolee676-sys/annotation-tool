@@ -4,7 +4,7 @@ import { buildSystemPrompt, buildUserMessage, markSelection } from '../src/main/
 import { isTrustedRendererUrl } from '../src/main/security.ts'
 import { summarizeUsage } from '../src/main/usageSummary.ts'
 import { isFreeModel } from '../src/shared/presets.ts'
-import { estimateCostCny, formatCny, priceForModel } from '../src/shared/pricing.ts'
+import { estimateCostCny, formatCny, formatUsageMultiplier, priceForModel, usageMultiplier } from '../src/shared/pricing.ts'
 import type { UsageRecord } from '../src/shared/types.ts'
 
 test('按模型价目估算费用，本机模型为 0', () => {
@@ -30,6 +30,23 @@ test('按模型价目估算费用，本机模型为 0', () => {
   )
   assert.equal(formatCny(0), '¥0')
   assert.equal(formatCny(0.0042), '¥0.0042')
+})
+
+test('消耗倍率以 deepseek-chat 为 1×，并覆盖本机/免费/自定义价格', () => {
+  assert.equal(usageMultiplier({ model: 'deepseek-chat' }), 1)
+  assert.ok(Math.abs((usageMultiplier({ model: 'qwen-turbo' }) ?? 0) - 0.09) < 0.0001)
+  assert.equal(usageMultiplier({ model: 'glm-4-flash' }), 0)
+  assert.equal(usageMultiplier({ model: 'qwen2.5:7b', local: true }), 0)
+  assert.equal(
+    usageMultiplier({ model: 'custom-model', fallbackIn: 1, fallbackOut: 1 }),
+    0.2
+  )
+  assert.equal(usageMultiplier({ model: 'custom-model' }), null)
+  assert.equal(formatUsageMultiplier(0), '免费')
+  assert.equal(formatUsageMultiplier(1), '1×')
+  assert.equal(formatUsageMultiplier(0.09), '<0.1×')
+  assert.equal(formatUsageMultiplier(12.4), '12×')
+  assert.equal(formatUsageMultiplier(null), '—')
 })
 
 test('免费模型标识只覆盖本机模型与明确免费的云端模型', () => {

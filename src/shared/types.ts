@@ -101,6 +101,7 @@ export interface PanelModelOption {
   providerName: string
   model: string
   free?: boolean
+  multiplier?: number | null
 }
 
 export const HISTORY_LIMIT = 1000
