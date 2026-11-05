@@ -10,6 +10,7 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "node --test tests/core.test.ts tests/ai.test.ts",
     "selftest": "electron-vite build && electron . --selftest",
     "dist": "electron-vite build && electron-builder --win --x64"
   },

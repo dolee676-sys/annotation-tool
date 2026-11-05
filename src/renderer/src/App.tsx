@@ -5,14 +5,15 @@ import type {
   AppEntry,
   AppState,
   HistoryRecord,
+  HistorySummary,
   ProviderKind,
   ProviderPatch,
   ProviderView,
   SettingsPatch,
   UsageSummary
 } from '../../shared/types'
-import { DEFAULT_PROMPT } from '../../shared/types'
-import { PROVIDER_PRESETS, isLocalAddress, presetById } from '../../shared/presets'
+import { DEFAULT_PROMPT, HISTORY_KEEP_RECENT, HISTORY_LIMIT } from '../../shared/types'
+import { PROVIDER_PRESETS, isFreeModel, isLocalAddress, presetById } from '../../shared/presets'
 import { formatCny } from '../../shared/pricing'
 
 marked.setOptions({ gfm: true, breaks: true })
@@ -24,6 +25,14 @@ interface TestState {
   ok?: boolean
   error?: string
   models?: number
+}
+
+interface CompressState {
+  busy: boolean
+  done: number
+  total: number
+  message: string
+  error?: string
 }
 
 interface EditorState {
@@ -112,6 +121,11 @@ const fmtTime = (ts: number): string =>
     minute: '2-digit'
   })
 
+const readableError = (error: unknown): string => {
+  const raw = error instanceof Error ? error.message : String(error)
+  return raw.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+}
+
 const normalizeAppName = (value: string): string =>
   value.trim().toLowerCase().replace(/\.exe$/i, '')
 
@@ -149,6 +163,8 @@ export function App(): JSX.Element {
   const [historyItems, setHistoryItems] = useState<HistoryRecord[] | null>(null)
   const [historyQuery, setHistoryQuery] = useState('')
   const [selectedHistoryId, setSelectedHistoryId] = useState('')
+  const [summaries, setSummaries] = useState<HistorySummary[]>([])
+  const [compressState, setCompressState] = useState<CompressState | null>(null)
 
   const flash = useCallback((message: string) => {
     setToast(message)
@@ -176,8 +192,12 @@ export function App(): JSX.Element {
   }, [tab, apps, loadApps])
 
   const loadHistory = useCallback(async () => {
-    const items = await window.zhujie.listHistory()
+    const [items, nextSummaries] = await Promise.all([
+      window.zhujie.listHistory(),
+      window.zhujie.listHistorySummaries()
+    ])
     setHistoryItems(items)
+    setSummaries(nextSummaries)
     setSelectedHistoryId((prev) => (items.some((item) => item.id === prev) ? prev : items[0]?.id ?? ''))
   }, [])
 
@@ -186,6 +206,19 @@ export function App(): JSX.Element {
   }, [tab, historyItems, loadHistory])
 
   useEffect(() => window.zhujie.on('history:changed', () => void loadHistory()), [loadHistory])
+
+  useEffect(
+    () =>
+      window.zhujie.on('history:compress-progress', (progress) => {
+        setCompressState({
+          busy: true,
+          done: progress.done,
+          total: progress.total,
+          message: progress.message
+        })
+      }),
+    []
+  )
 
   useEffect(() => {
     let alive = true
@@ -210,9 +243,13 @@ export function App(): JSX.Element {
   }, [state, promptDirty])
 
   const patch = async (next: SettingsPatch, note?: string): Promise<void> => {
-    const updated = await window.zhujie.updateSettings(next)
-    setState(updated)
-    if (note) flash(note)
+    try {
+      const updated = await window.zhujie.updateSettings(next)
+      setState(updated)
+      if (note) flash(note)
+    } catch (error) {
+      flash(readableError(error))
+    }
   }
 
   const addApp = (): void => {
@@ -228,6 +265,10 @@ export function App(): JSX.Element {
   }
 
   const savePrompt = async (): Promise<void> => {
+    if (!promptDraft.trim()) {
+      flash('提示词不能为空')
+      return
+    }
     await patch({ prompt: promptDraft }, '提示词已保存')
     setPromptDirty(false)
   }
@@ -254,7 +295,7 @@ export function App(): JSX.Element {
       setEditor(null)
       flash('模型服务已保存')
     } catch (error) {
-      flash(error instanceof Error ? error.message : '保存失败')
+      flash(readableError(error))
     } finally {
       setSavingProvider(false)
     }
@@ -287,11 +328,52 @@ export function App(): JSX.Element {
   }
 
   const clearHistory = async (): Promise<void> => {
-    if (!window.confirm('清空全部历史记录？此操作不可恢复。')) return
-    const items = await window.zhujie.clearHistory()
-    setHistoryItems(items)
+    if (!window.confirm('清空全部历史记录和综合摘要？此操作不可恢复。')) return
+    await window.zhujie.clearHistory()
+    await loadHistory()
     setSelectedHistoryId('')
     flash('历史记录已清空')
+  }
+
+  const compressHistory = async (): Promise<void> => {
+    const count = historyItems?.length ?? 0
+    if (count < HISTORY_LIMIT) return
+    const compressible = count - HISTORY_KEEP_RECENT
+    const confirmed = window.confirm(
+      `历史记录已有 ${count} 条。\n\n将把最早的 ${compressible} 条交给当前模型，压缩成一份综合摘要，保留最近 ${HISTORY_KEEP_RECENT} 条。\n\n这会发起一次或多次 AI 请求，可能产生费用，并需要一点时间。继续吗？`
+    )
+    if (!confirmed) return
+    setCompressState({
+      busy: true,
+      done: 0,
+      total: compressible,
+      message: '正在准备历史记录…'
+    })
+    try {
+      const result = await window.zhujie.compressHistory()
+      if (!result.ok) {
+        setCompressState({
+          busy: false,
+          done: 0,
+          total: compressible,
+          message: '',
+          error: result.error ?? '压缩失败'
+        })
+        return
+      }
+      setCompressState(null)
+      await loadHistory()
+      await refreshUsage()
+      flash(`已压缩 ${result.compressed} 条，保留最近 ${result.kept} 条`)
+    } catch (error) {
+      setCompressState({
+        busy: false,
+        done: 0,
+        total: compressible,
+        message: '',
+        error: readableError(error)
+      })
+    }
   }
 
   const modelOptions = useMemo(() => {
@@ -452,10 +534,21 @@ export function App(): JSX.Element {
     ? isLocalAddress(activeProviderInfo.baseUrl)
     : settings.localOnly
   const modeMismatch = Boolean(activeProviderInfo) && activeIsLocal !== settings.localOnly
+  const activeModelFree = isFreeModel(
+    activeProviderInfo?.presetId,
+    settings.defaultModel,
+    activeIsLocal
+  )
 
   async function changeMode(local: boolean): Promise<void> {
     if (local === settings.localOnly) return
-    const updated = await window.zhujie.updateSettings({ localOnly: local })
+    let updated: AppState
+    try {
+      updated = await window.zhujie.updateSettings({ localOnly: local })
+    } catch (error) {
+      flash(readableError(error))
+      return
+    }
     setState(updated)
     const current = updated.providers.find(
       (provider) => provider.id === updated.settings.defaultProviderId
@@ -541,7 +634,7 @@ export function App(): JSX.Element {
     } catch (error) {
       setPresetNotice({
         ok: false,
-        message: error instanceof Error ? error.message : '保存失败'
+        message: readableError(error)
       })
     } finally {
       setPresetBusy(false)
@@ -769,6 +862,9 @@ export function App(): JSX.Element {
                   <strong>{activeLabel}</strong>
                   <span className="active-model-name">
                     {settings.defaultModel || '还没有选择模型'}
+                    {activeModelFree && settings.defaultModel && (
+                      <span className="free-badge">免费</span>
+                    )}
                   </span>
                   {modeMismatch && (
                     <span className="active-warn">
@@ -821,7 +917,12 @@ export function App(): JSX.Element {
                         }
                         onClick={() => selectPreset(preset.id, state)}
                       >
-                        <span className="preset-name">{preset.name}</span>
+                        <span className="preset-name">
+                          {preset.name}
+                          {(preset.free || (preset.freeModels?.length ?? 0) > 0) && (
+                            <span className="free-badge">免费</span>
+                          )}
+                        </span>
                         <span className="preset-tagline">{preset.tagline}</span>
                         <span className={configured ? 'preset-state ok' : 'preset-state'}>
                           {configured ? '已配置' : '未配置'}
@@ -830,6 +931,9 @@ export function App(): JSX.Element {
                     )
                   })}
                 </div>
+                <p className="hint">
+                  标有「免费」的服务商或模型由服务商提供免费额度，具体额度和有效期以服务商页面为准。
+                </p>
               </div>
 
               {activePreset && activeProvider && (
@@ -881,6 +985,7 @@ export function App(): JSX.Element {
                         {activeChoices.map((model) => (
                           <option key={model} value={model}>
                             {model}
+                            {isFreeModel(activePreset.id, model, activePreset.local) ? '（免费）' : ''}
                           </option>
                         ))}
                       </select>
@@ -1072,8 +1177,12 @@ export function App(): JSX.Element {
                         }
                         onRemove={async () => {
                           if (!window.confirm(`删除「${provider.name}」？`)) return
-                          setState(await window.zhujie.removeProvider(provider.id))
-                          flash('已删除')
+                          try {
+                            setState(await window.zhujie.removeProvider(provider.id))
+                            flash('已删除')
+                          } catch (error) {
+                            flash(readableError(error))
+                          }
                         }}
                         onUseModel={(model) => {
                           void patch(
@@ -1147,9 +1256,15 @@ export function App(): JSX.Element {
                     step="50"
                     defaultValue={settings.contextChars}
                     disabled={!settings.useContext}
-                    onBlur={(event) =>
-                      void patch({ contextChars: Number(event.target.value) || 300 })
-                    }
+                    onBlur={(event) => {
+                      const value = Number(event.target.value)
+                      void patch({
+                        contextChars:
+                          Number.isFinite(value) && value > 0
+                            ? Math.min(1000, Math.max(100, value))
+                            : 100
+                      })
+                    }}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') event.currentTarget.blur()
                     }}
@@ -1158,6 +1273,40 @@ export function App(): JSX.Element {
                   <span className="muted">
                     会多发送约 2 倍上下文，费用通常为原来的 1.5–2 倍。
                   </span>
+                </div>
+              </div>
+
+              <div className="panel-card">
+                <div className="card-head">
+                  <h2>单次发送上限</h2>
+                  <span className="muted">当前 {settings.maxChars} 字</span>
+                </div>
+                <p className="muted">
+                  选中文字超过上限时只发送前面的部分，注解面板会明确提示「已截断」，不会让你误以为整段都发送了。
+                </p>
+                <div className="context-length">
+                  <span>最多</span>
+                  <input
+                    key={settings.maxChars}
+                    type="number"
+                    min="100"
+                    max="20000"
+                    step="100"
+                    defaultValue={settings.maxChars}
+                    onBlur={(event) => {
+                      const value = Number(event.target.value)
+                      void patch({
+                        maxChars:
+                          Number.isFinite(value) && value > 0
+                            ? Math.min(20000, Math.max(100, value))
+                            : 100
+                      })
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') event.currentTarget.blur()
+                    }}
+                  />
+                  <span>字</span>
                 </div>
               </div>
 
@@ -1184,7 +1333,9 @@ export function App(): JSX.Element {
               <header className="section-head">
                 <div>
                   <h1>历史记录</h1>
-                  <p>注解和提问都会保存在本机，最多保留 1000 条。</p>
+                  <p>
+                    注解和提问都会保存在本机，最多保留 {HISTORY_LIMIT} 条；满了可以压缩成综合摘要。
+                  </p>
                 </div>
                 <button
                   className="ghost danger"
@@ -1194,6 +1345,56 @@ export function App(): JSX.Element {
                   清空记录
                 </button>
               </header>
+
+              {historyItems && historyItems.length >= HISTORY_LIMIT && (
+                <div className="notice-card">
+                  <div>
+                    <strong>历史已满 {HISTORY_LIMIT} 条</strong>
+                    <p>
+                      可以把最早的 {HISTORY_LIMIT - HISTORY_KEEP_RECENT} 条压缩成一份综合摘要，保留最近{' '}
+                      {HISTORY_KEEP_RECENT} 条。压缩会调用当前模型，可能需要一点时间并产生费用。
+                    </p>
+                  </div>
+                  <button
+                    className="primary"
+                    disabled={compressState?.busy}
+                    onClick={() => void compressHistory()}
+                  >
+                    {compressState?.busy ? '压缩中…' : '压缩旧记录'}
+                  </button>
+                </div>
+              )}
+
+              {compressState?.busy && (
+                <div className="compress-status">
+                  <div className="compress-bar">
+                    <span
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round(
+                            (compressState.done / Math.max(1, compressState.total)) * 100
+                          )
+                        )}%`
+                      }}
+                    />
+                  </div>
+                  <span>{compressState.message}</span>
+                </div>
+              )}
+              {compressState?.error && <p className="test-error">{compressState.error}</p>}
+
+              {summaries.length > 0 && (
+                <div className="summary-list">
+                  <div className="summary-list-head">
+                    <strong>综合摘要</strong>
+                    <span className="muted">旧记录压缩后会保留在这里</span>
+                  </div>
+                  {summaries.map((summary) => (
+                    <SummaryCard key={summary.id} summary={summary} />
+                  ))}
+                </div>
+              )}
 
               <div className="history-toolbar">
                 <input
@@ -1508,12 +1709,25 @@ export function App(): JSX.Element {
 
               <div className="panel-card">
                 <div className="card-head">
+                  <h2>启动</h2>
+                  <input
+                    type="checkbox"
+                    className="switch"
+                    checked={settings.launchAtLogin}
+                    onChange={(event) => void patch({ launchAtLogin: event.target.checked })}
+                  />
+                </div>
+                <p className="muted">开机后自动在托盘运行，不弹窗；需要时点托盘图标打开设置。</p>
+              </div>
+
+              <div className="panel-card">
+                <div className="card-head">
                   <h2>隐私</h2>
                 </div>
                 <p className="prose">
-                  配置、用量记录都只保存在本机数据目录。默认开启「仅本机」，请求只会发往
-                  localhost。关闭后才会使用你自行配置的云端接口；本应用没有内置遥测、
-                  账号或云同步。
+                  配置、用量记录、历史对话和综合摘要都只保存在本机数据目录。历史和摘要是明文文件，
+                  未做额外加密。默认开启「仅本机」，请求只会发往 localhost。关闭后才会使用你自行配置的
+                  云端接口；本应用没有内置遥测、账号或云同步。
                 </p>
               </div>
 
@@ -1581,6 +1795,42 @@ interface ProviderCardProps {
   onUseModel: (model: string) => void
 }
 
+function SummaryCard({ summary }: { summary: HistorySummary }): JSX.Element {
+  const html = useMemo(
+    () => DOMPurify.sanitize(marked.parse(summary.summary) as string),
+    [summary.summary]
+  )
+  const [copied, setCopied] = useState(false)
+
+  const copy = async (): Promise<void> => {
+    await window.zhujie.writeClipboard(summary.summary)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1400)
+  }
+
+  return (
+    <details className="summary-card" open>
+      <summary>
+        <span className="history-mode summary">综合</span>
+        <span className="summary-title">{summary.sourceCount} 条记录</span>
+        <span className="summary-meta">
+          {fmtTime(summary.fromTs)} – {fmtTime(summary.toTs)} · {summary.model}
+        </span>
+      </summary>
+      <div className="summary-body markdown" dangerouslySetInnerHTML={{ __html: html }} />
+      <div className="summary-foot">
+        <span>
+          {summary.providerName} · {summary.totalTokens.toLocaleString()} tokens ·{' '}
+          {formatCny(summary.cost)}
+        </span>
+        <button className="link" onClick={() => void copy()}>
+          {copied ? '已复制' : '复制摘要'}
+        </button>
+      </div>
+    </details>
+  )
+}
+
 function ProviderCard({
   provider,
   test,
@@ -1592,6 +1842,8 @@ function ProviderCard({
   onUseModel
 }: ProviderCardProps): JSX.Element {
   const local = /^(http:\/\/)?(localhost|127\.0\.0\.1|\[::1\])/i.test(provider.baseUrl)
+  const preset = presetById(provider.presetId ?? '')
+  const hasFree = local || Boolean(preset?.free) || (preset?.freeModels?.length ?? 0) > 0
   return (
     <div className={isDefault ? 'provider-card default' : 'provider-card'}>
       <div className="provider-head">
@@ -1600,6 +1852,7 @@ function ProviderCard({
             {provider.name}
             {isDefault && <span className="pill accent">默认</span>}
             <span className={local ? 'pill' : 'pill warn'}>{local ? '本机' : '外部'}</span>
+            {hasFree && <span className="free-badge">免费</span>}
           </h3>
           <code className="provider-url">{provider.baseUrl}</code>
         </div>
@@ -1630,6 +1883,9 @@ function ProviderCard({
               title="设为默认模型"
             >
               {model}
+              {isFreeModel(provider.presetId, model, local) && (
+                <span className="free-badge">免费</span>
+              )}
             </button>
           ))
         )}

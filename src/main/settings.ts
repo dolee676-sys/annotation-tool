@@ -96,6 +96,7 @@ function settingsPath(): string {
 export class SettingsStore {
   private data: StoredSettings
   private timer: NodeJS.Timeout | null = null
+  private lastWriteError: string | null = null
 
   constructor() {
     this.data = this.load()
@@ -136,11 +137,19 @@ export class SettingsStore {
     }
   }
 
-  private writeNow(data: StoredSettings): void {
+  private writeNow(data: StoredSettings): boolean {
     const file = settingsPath()
     const tmp = `${file}.tmp`
-    writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')
-    renameSync(tmp, file)
+    try {
+      writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')
+      renameSync(tmp, file)
+      this.lastWriteError = null
+      return true
+    } catch (error) {
+      this.lastWriteError = error instanceof Error ? error.message : String(error)
+      console.error('[settings] 写入配置失败', error)
+      return false
+    }
   }
 
   private scheduleSave(): void {
@@ -151,12 +160,16 @@ export class SettingsStore {
     }, 150)
   }
 
-  flush(): void {
+  flush(): boolean {
     if (this.timer) {
       clearTimeout(this.timer)
       this.timer = null
     }
-    this.writeNow(this.data)
+    return this.writeNow(this.data)
+  }
+
+  getLastWriteError(): string | null {
+    return this.lastWriteError
   }
 
   get(): StoredSettings {

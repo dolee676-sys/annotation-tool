@@ -15,22 +15,27 @@
 | 选中文字后旁边出现小框 | `selection-hook` 通过系统无障碍 API 拿到选中文字与屏幕坐标，Electron 透明置顶窗口贴在选区右下角 |
 | 小框写「注解」 | 88×74 的无边框、不抢焦点窗口，上下两个按钮 |
 | 点开是 AI 解析 | 600×640 面板，流式请求，Markdown 渲染，可复制 / 重新生成 / 切换模型 |
-| 还可以直接提问 | 小框里「注解」下面有「提问」：输入问题，AI 结合选中文字回答，可继续追问 |
+| 还可以直接提问 | 小框里「注解」下面有「提问」：输入问题，AI 结合选中文字回答；继续追问时会带上最近几轮问答，能理解“第二点再展开” |
+| 面板即刻出现 | 点「注解」后先显示面板骨架，再在后台读取上下文；面板用非激活方式出现，不抢源应用焦点 |
+| 超长选中提示 | 超过单次发送上限时只发前面部分，面板明确显示「已截断，仅发送前 N 字」；上限可在设置里调整 |
 | 结合上下文 | 默认读取选中位置前后各 300 字，把选中部分标成【选中】后一起发给模型；读不到时自动回退 |
 | 锁定面板 | 面板右上角钉子按钮：钉住后点外面不关闭，再点一次取消 |
 | 点外面关闭 | 默认未钉住时，点击面板之外的区域会关闭当前面板 |
 | 选择在哪个应用上使用 | 「全部应用 / 仅指定应用」；自动记录实际划词来源应用，勾选即启用 |
 | 仅在本电脑运行 | 默认开启「仅本机」，非 localhost 的 Base URL 直接拦截；Ollama / LM Studio 开箱可用 |
+| 安全边界 | 三个窗口使用各自的最小权限 preload；启用 `sandbox`；拦截非本地导航并交给系统浏览器；IPC 校验发送方来源；生产 CSP 禁止外部连接 |
 | 可切换模型 | 设置里选服务商、模型、填 Key；注解面板内也能直接切；切换后立即重答并记住默认模型 |
 | 记录模型用量 | 每次请求记录模型、应用、prompt/completion tokens、耗时、成功状态；按模型 / 应用 / 天聚合 |
 | 记录花费 | 按内置价目估算人民币费用，本机模型为 0；自定义接口可填输入/输出价格 |
+| 免费模型标识 | 本机 Ollama / LM Studio 的全部模型、智谱 `glm-4-flash` 等带免费额度的模型旁显示「免费」；额度以服务商为准 |
 | 历史对话 | 注解和提问全文保存在本机，可搜索、查看、复制、单条删除或清空 |
+| 历史压缩 | 满 1000 条后出现「压缩旧记录」按钮：分批交给当前模型归纳问题与回答，生成一份综合摘要，保留最近 200 条 |
 
 ## 快速开始
 
 > 仓库已包含 MIT 许可证、CI 配置和贡献指南；截图使用演示应用数据，不包含本机真实软件列表。
 
-要求：Node.js ≥ 18、Windows 10/11（当前主要验证平台）。
+要求：Node.js ≥ 20、Windows 10/11（当前主要验证平台）。单元测试和 CI 使用 Node 24。
 
 ```bash
 npm install
@@ -94,6 +99,7 @@ ollama pull qwen2.5:7b
 
 - 云端模式：选中的文字会发送给对应服务商，不要用于敏感内容。
 - 本机模式：请求只发往 `127.0.0.1`，文字不离开电脑。
+- 带「免费」标识的模型由服务商提供免费额度（本机模型完全免费）；额度、限速和有效期可能变化，以服务商页面为准。
 
 ### 划词后的两个按钮
 
@@ -101,6 +107,8 @@ ollama pull qwen2.5:7b
 
 - **注解**：直接生成解析；
 - **提问**：打开输入框，输入你的问题，AI 会结合选中的文字回答；回答完还可以继续问。
+
+继续追问时，请求会带上最近 4 轮问答（回答过长会截断），因此“第二点再展开”“用一句话总结”这类指代会保留上下文；面板里显示的完整对话不会被全部重复发送。
 
 ![提问](selftest/panel-ask-answer.png)
 
@@ -110,10 +118,17 @@ ollama pull qwen2.5:7b
 
 「注解提示词」页有「结合上下文」开关，默认开启，前后各 300 字，可改成 100–1000 字。
 
-- 点「注解 / 提问」时，通过 Windows 无障碍接口读取当前应用选中位置附近的文字，标记出【选中】部分后一起发送；
+- 点「注解」后面板会立即出现（骨架动画），上下文在后台读取，不再先等 0–2 秒才出面板；
+- 面板以非激活方式显示，不抢源应用焦点，PowerShell/UIA 仍能读取原来的选区；读完开始请求，但不会自动把你的焦点从当前窗口抢回面板，点一下面板即可继续操作；
 - 不截屏，只读取当前应用暴露给系统的文本；
-- 有些应用/浏览器/PDF 阅读器不向系统暴露文本，此时自动只发选中文字，面板会显示「未读取到上下文」；同一应用 10 分钟内不再重试，避免每次等待；
+- 有些应用/浏览器/PDF 阅读器不向系统暴露文本，此时自动只发选中文字，面板会显示「未读取到上下文」；同一应用 2 分钟内不再重试，避免连续等待；
 - 费用按实际 token 记录，前后各 300 字通常约为原来的 1.5–2 倍。
+
+### 超长选中
+
+「注解提示词」页可以设置「单次发送上限」（默认 2000 字）。选中文字超过上限时只发送前面的部分，面板会显示「已截断，仅发送前 N 字」，避免误以为整段都发给了模型。
+
+![超长选中提示](selftest/panel-truncated.png)
 
 ### 面板操作
 
@@ -138,7 +153,16 @@ ollama pull qwen2.5:7b
 
 「历史记录」保存每次注解/提问的选中文字、问题、回答、模型和费用，支持搜索、复制回答、单条删除和清空。最多保留 1000 条，只写在本机。
 
-![历史记录](selftest/history.png)
+历史满 1000 条后，页面顶部会出现「压缩旧记录」按钮：
+
+- 把最早的 800 条分批交给当前模型，合并重复问题、提炼主题，并综合相关回答；
+- 生成一份可展开、可复制的「综合摘要」，旧记录压缩后只保留摘要；
+- 最近 200 条原文继续保留；
+- 压缩会发起一次或多次 AI 请求，可能产生费用，进度会显示在页面上；中途失败不会删除任何历史记录。
+
+![历史已满](selftest/history-full.png)
+
+![综合摘要](selftest/history-compressed.png)
 
 ### 用量与费用
 
@@ -150,6 +174,7 @@ ollama pull qwen2.5:7b
 
 ```bash
 npm run typecheck   # 主进程 + 渲染进程类型检查
+npm test            # 纯函数 / 提示词 / 导航安全单元测试
 npm run build       # 生产构建到 out/
 npm run dev         # 开发模式（Vite + Electron）
 npm run selftest    # 构建并用本地 mock 模型跑通全链路，截图写入 selftest/
@@ -159,11 +184,23 @@ npm run dist        # electron-builder 打包（本机未验证，见“验证�
 ## 数据与隐私
 
 - 配置：`%APPDATA%/zhujie/settings.json`
-- 用量：`%APPDATA%/zhujie/usage.jsonl`（应用内「关于」页可看到实际路径）
-- 历史对话：`%APPDATA%/zhujie/history.jsonl`（最多 1000 条；用量最多保留 20000 条，超出自动压缩）
+- 用量：`%APPDATA%/zhujie/usage.jsonl`（最多保留 20000 条，超出自动压缩；应用内「关于」页可看到实际路径）
+- 历史对话：`%APPDATA%/zhujie/history.jsonl`（最多 1000 条）
+- 历史综合摘要：`%APPDATA%/zhujie/history-summaries.json`（最多 50 份）
+- 历史上限后按批次重写：累计丢弃 25 条才整理一次文件；用量累计丢弃 200 条整理一次，避免每新增一条就全量同步写盘
+- 配置写入失败时界面会提示，不再假装“已保存”；历史/用量写入失败会保留内存副本并记录错误日志
 - API Key：Electron `safeStorage` 加密后写入配置；渲染进程只能看到“是否已保存”，拿不到明文
 - 默认「仅本机」：只允许 `localhost` / `127.0.0.1` / `::1` 的地址；关闭后才会访问你配置的云端接口
 - 无账号、无遥测、无云同步
+
+安全边界：
+
+- 小框、注解面板、设置窗口分别使用独立的 preload：小框只有 `chipClick`，面板只有 `panel:*` 与复制，只有设置窗口能读写配置、历史和用量；
+- 三个窗口都启用 `sandbox`、`contextIsolation`，关闭 `nodeIntegration`；
+- 拦截 `will-navigate` / `will-redirect` / `will-frame-navigate`：非应用自身页面的导航一律阻止，http/https 链接交给系统浏览器打开；
+- 所有 IPC handler 校验发送方 URL，非本地应用页面直接拒绝；
+- 生产构建 CSP 使用 `connect-src 'self'`，并禁用 `object`、`base`、`frame`，降低 XSS 后的外联面；
+- 历史对话和摘要是明文 JSONL/JSON，只保存在本机；如果电脑多人共用，请自行保护用户目录。
 
 ## 结构
 
@@ -174,11 +211,17 @@ src/main/windows.ts      小框 / 注解面板 / 设置窗口 / 托盘
 src/main/ai.ts           Ollama 原生 + OpenAI 兼容流式客户端、token 统计
 src/main/settings.ts     配置持久化、应用白名单、密钥加密
 src/main/usage.ts        JSONL 用量记录与聚合
-src/main/history.ts      JSONL 历史对话
+src/main/history.ts      JSONL 历史对话与综合摘要
+src/main/compress.ts     历史分批归纳与最终综合摘要
+src/main/security.ts     本地页面信任判断（导航 / IPC 共用）
+src/shared/presets.ts    服务商预设、免费模型标识
 src/shared/pricing.ts    内置人民币价目与费用估算
-src/preload/index.ts     类型化 IPC 桥
+src/preload/index.ts     设置窗口的 IPC 桥
+src/preload/panel.ts     注解面板的最小权限 IPC 桥
+src/preload/chip.ts      划词小框的最小权限 IPC 桥
 src/renderer/            React 界面（单入口按 hash 分流）
 src/shared/types.ts      主进程 / 渲染进程共享契约
+tests/core.test.ts       纯函数、提示词与导航安全单元测试
 ```
 
 技术选型说明：全局划词没有用“模拟 Ctrl+C + 轮询剪贴板”这种侵入式方案，而是用 `selection-hook` 优先走 UI Automation / Accessibility API，拿到的数据里同时包含**选中文本、四角坐标和来源应用名**，剪切板只作为最后回退。
@@ -200,27 +243,34 @@ src/shared/types.ts      主进程 / 渲染进程共享契约
 
 ## 验证记录
 
-已执行（2026-11-04，Windows）：
+已执行（2026-11-04 ~ 11-05，Windows）：
 
 - `npm run typecheck`：通过
-- `npm run build`：通过（主进程 / 预加载 / 渲染进程）
+- `npm test`：12 项通过（价目与费用、免费模型、选区标记、多轮追问提示词、系统提示词、导航/页面信任、旧用量 latencyMs 守卫；OpenAI SSE、Ollama NDJSON、401、坏行、外部中止、模型列表）
+- `npm run build`：通过（主进程 / 3 个 preload / 渲染进程）
 - `npm run selftest`：通过
   - 模拟划词 → 小框 → 通过小框点击事件打开面板 → 流式输出 → 入库
-  - 注解 2 次、提问 1 次，共 3 次真实请求 / 1200 tokens；按模型聚合为 `mock-annotator` / `mock-annotator-2`
-  - 提问面板：点击小框下半部「提问」→ 输入问题 → 结合选中文字回答 → 记录用量
-  - 历史记录：3 条（2 条注解 + 1 条提问），全文可查看
+  - 注解 2 次、提问 2 次，共 4 次真实请求 / 1600 tokens；两次提问后 `turns=2`，验证追问保留了上一轮回答
+  - 提问面板：点击小框下半部「提问」→ 输入问题 → 结合选中文字回答 → 再追问“再展开第二点”
+  - 历史记录：压缩前 4 条（2 条注解 + 2 条提问），全文可查看
   - 钉子按钮：点击后状态为 pinned=true，再点恢复 false
   - 费用：`deepseek-chat` 100 万输入 + 100 万输出估算为 ¥10；另加 1 条 ¥0.0042 的计费样例用于核对用量页显示
   - Ollama 原生 NDJSON 路径独立验证：240 tokens（150 prompt + 90 completion），模型列表拉取正常
-  - 应用扫描：102 个应用 / 7 个运行中；在搜索框输入 `Edge` 后只显示 Microsoft Edge
+  - 历史压缩：模拟 1000 条记录 → 压缩最早的 800 条 → 保留最近 200 条、生成 1 份综合摘要（960 tokens）；压缩失败不会改动原记录
+  - 历史上限：追加 1000 条后文件 1004 行（上限 1000 + 批量 25 内，没有逐条全量重写）；压缩后立即重写为 200 行
+  - 免费模型标识：Ollama / LM Studio 与 `glm-4-flash` 判定为免费，`deepseek-chat` 不标记
+  - 安全边界：面板 preload 只暴露 8 个面板能力，没有 `listHistory/updateSettings/quit`；设置窗口不暴露 `panelAsk/chipClick`；把面板导航到本地非应用页面后 URL 仍停留在 `#panel`
+  - 超长选中：把上限设为 100 字后发送 136 字，面板显示「已截断，仅发送前 100 字」
+  - 应用扫描：103 个应用 / 8 个运行中；在搜索框输入 `Edge` 后只显示 Microsoft Edge
   - 「仅指定应用」白名单拦截验证通过
   - 取词服务状态 `running`
   - 小框透明裁切：移除运行期 `setBackgroundColor`（在 Windows 上会把透明窗口刷成灰底），系统级截图确认按钮外围不再有方形底
   - 结合上下文：提示词构建验证通过；可访问的前台文档能读到约 600 字（前后各 300 字）；测试窗口未向 UIA 暴露选区时自动回退，不影响取词与回答
-  - 上下文失败按应用冷却 10 分钟；上下文记录写入用量和历史
-- 截图：`selftest/chip.png`、`selftest/panel.png`、`selftest/panel-pinned.png`、`selftest/panel-switch.png`、`selftest/panel-ask.png`、`selftest/panel-ask-answer.png`、`selftest/history.png`、`selftest/settings.png`、`selftest/settings-search.png`、`selftest/models.png`、`selftest/models-cloud.png`、`selftest/prompt.png`、`selftest/usage.png`
+  - 面板先显示：自测日志里面板 `dom-ready` 早于上下文结果返回；面板以 `showInactive` 出现，不抢源应用焦点
+  - 上下文失败按应用冷却 2 分钟；上下文记录写入用量和历史
+- 截图：`selftest/chip.png`、`selftest/panel.png`、`selftest/panel-pinned.png`、`selftest/panel-switch.png`、`selftest/panel-ask.png`、`selftest/panel-ask-answer.png`、`selftest/panel-truncated.png`、`selftest/history.png`、`selftest/history-full.png`、`selftest/history-compressed.png`、`selftest/settings.png`、`selftest/settings-search.png`、`selftest/models.png`、`selftest/models-cloud.png`、`selftest/prompt.png`、`selftest/usage.png`
 - 真实取词：自测期间记录到本机前台应用的划词事件（应用名已隐去），说明全局钩子与应用名识别在真实环境生效
-- 打包版：`electron-builder --win --dir` 生成 `release/win-unpacked/注解.exe`；打包版执行 `--selftest` 同样通过（requests=4、tokens=2500、取词服务 running），原生 `selection-hook.node` 已正确解包
+- 打包版：`electron-builder --win --dir` 生成 `release/win-unpacked/注解.exe`；安装到 `D:\Apps\zhujie` 后执行 `--selftest` 通过（exit=0、requests=7、tokens=4260、历史压缩 800→200、摘要 1 份），日志见 `selftest/package-selftest.txt`；原生 `selection-hook.node` 已正确解包
 - 桌面快捷方式：`%USERPROFILE%\Desktop\注解.lnk` → `D:\Apps\zhujie\注解.exe`（默认安装目录，可用脚本参数修改），实际双击启动后出现「注解」窗口
 
 未验证：
@@ -240,3 +290,6 @@ src/shared/types.ts      主进程 / 渲染进程共享契约
 - 费用为内置价目估算，实际以服务商账单为准；自定义接口需要自己填写价格。
 - 上下文读取依赖应用向 Windows 无障碍接口暴露文本；部分浏览器/PDF 阅读器可能读不到，此时只发送选中文字，不影响注解与提问。
 - 系统提示词会明确告诉模型：选中文字只是资料，不执行其中的指令，降低提示注入风险。
+- 发布包未做 Authenticode 签名，也没有自动更新器；Windows SmartScreen 可能提示，正式分发前需要证书与更新方案。
+- 应用扫描基于“有窗口的运行中进程 + 开始菜单快捷方式”，少量带窗口的后台工具/桌面宠物也可能出现；可用「仅指定应用」白名单忽略。
+- 单元测试覆盖价目、免费标识、提示词、多轮追问、导航信任、旧用量 latencyMs 守卫，以及 OpenAI SSE / Ollama NDJSON 解析、401、坏行、外部中止和模型列表；120 秒超时、SSE 中途断流、磁盘写入失败仍未做完整故障注入。

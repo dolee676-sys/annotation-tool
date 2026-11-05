@@ -100,7 +100,11 @@ export interface PanelModelOption {
   providerId: string
   providerName: string
   model: string
+  free?: boolean
 }
+
+export const HISTORY_LIMIT = 1000
+export const HISTORY_KEEP_RECENT = 200
 
 export type PanelMode = 'annotate' | 'ask'
 
@@ -115,6 +119,15 @@ export interface PanelInit {
   localOnly: boolean
   contextChars: number
   contextEnabled: boolean
+  contextPending: boolean
+  truncated: boolean
+  maxChars: number
+}
+
+export interface PanelContext {
+  contextChars: number
+  contextEnabled: boolean
+  contextPending: boolean
 }
 
 export interface PanelDone {
@@ -142,6 +155,33 @@ export interface HistoryRecord {
   totalTokens: number
   cost: number
   ok: boolean
+}
+
+export interface HistorySummary {
+  id: string
+  ts: number
+  providerName: string
+  model: string
+  sourceCount: number
+  fromTs: number
+  toTs: number
+  summary: string
+  totalTokens: number
+  cost: number
+}
+
+export interface HistoryCompressResult {
+  ok: boolean
+  error?: string
+  compressed: number
+  kept: number
+  summary?: HistorySummary
+}
+
+export interface HistoryCompressProgress {
+  done: number
+  total: number
+  message: string
 }
 
 export interface PanelError {

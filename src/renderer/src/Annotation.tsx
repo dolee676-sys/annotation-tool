@@ -139,6 +139,9 @@ export function Panel(): JSX.Element {
       }
       stickToBottom.current = true
     })
+    const offContext = window.zhujie.on('panel:context', (payload) => {
+      setInit((prev) => (prev ? { ...prev, ...payload } : prev))
+    })
     const offDelta = window.zhujie.on('panel:delta', ({ chunk }: { chunk: string }) => {
       if (target.current === 'followup') {
         setFollowUps((prev) => {
@@ -200,6 +203,7 @@ export function Panel(): JSX.Element {
     return () => {
       offInit()
       offReset()
+      offContext()
       offDelta()
       offDone()
       offError()
@@ -213,14 +217,19 @@ export function Panel(): JSX.Element {
   }, [initialAnswer, followUps])
 
   const groups = useMemo(() => {
-    const map = new Map<string, { providerId: string; name: string; models: string[] }>()
+    const map = new Map<
+      string,
+      { providerId: string; name: string; models: Array<{ name: string; free: boolean }> }
+    >()
     for (const option of init?.options ?? []) {
       const group = map.get(option.providerId) ?? {
         providerId: option.providerId,
         name: option.providerName,
         models: []
       }
-      if (!group.models.includes(option.model)) group.models.push(option.model)
+      if (!group.models.some((item) => item.name === option.model)) {
+        group.models.push({ name: option.model, free: Boolean(option.free) })
+      }
       map.set(option.providerId, group)
     }
     return Array.from(map.values())
@@ -233,7 +242,11 @@ export function Panel(): JSX.Element {
     initialStatus === 'waiting' ||
     initialStatus === 'streaming' ||
     followUps.some((item) => item.status === 'waiting' || item.status === 'streaming')
-  const canAsk = !busy && (mode === 'ask' || initialStatus === 'done' || initialStatus === 'error')
+  const contextPending = Boolean(init?.contextPending)
+  const canAsk =
+    !busy &&
+    !contextPending &&
+    (mode === 'ask' || initialStatus === 'done' || initialStatus === 'error')
   const latestMeta = followUps.length ? followUps[followUps.length - 1].meta : initialMeta
   const latestStatus = followUps.length ? followUps[followUps.length - 1].status : initialStatus
 
@@ -264,27 +277,31 @@ export function Panel(): JSX.Element {
     void window.zhujie.panelAsk(item.question)
   }
 
-  const placeholder = !canAsk
-    ? mode === 'annotate' && (initialStatus === 'waiting' || initialStatus === 'streaming')
-      ? '注解完成后可以继续提问…'
-      : '回答中…'
-    : mode === 'annotate'
-      ? '对这段内容继续提问…'
-      : followUps.length > 0
-        ? '继续问这段文字…'
-        : '想问这段文字什么？'
+  const placeholder = contextPending
+    ? '正在读取上下文…'
+    : !canAsk
+      ? mode === 'annotate' && (initialStatus === 'waiting' || initialStatus === 'streaming')
+        ? '注解完成后可以继续提问…'
+        : '回答中…'
+      : mode === 'annotate'
+        ? '对这段内容继续提问…'
+        : followUps.length > 0
+          ? '继续问这段文字…'
+          : '想问这段文字什么？'
 
-  const footerStatus = busy
-    ? initialStatus === 'waiting' && followUps.length === 0
-      ? '正在解析'
-      : '正在回答'
-    : latestStatus === 'done'
-      ? '已记录用量'
-      : latestStatus === 'error'
-        ? '未完成'
-        : mode === 'ask' && followUps.length === 0
-          ? '等你提问'
-          : '准备中'
+  const footerStatus = contextPending
+    ? '正在读取上下文'
+    : busy
+      ? initialStatus === 'waiting' && followUps.length === 0
+        ? '正在解析'
+        : '正在回答'
+      : latestStatus === 'done'
+        ? '已记录用量'
+        : latestStatus === 'error'
+          ? '未完成'
+          : mode === 'ask' && followUps.length === 0
+            ? '等你提问'
+            : '准备中'
 
   return (
     <div className="panel">
@@ -314,14 +331,18 @@ export function Panel(): JSX.Element {
             {!selectedValue && <option value="">选择模型</option>}
             {groups.map((group) => (
               <optgroup key={group.providerId} label={group.name}>
-                {group.models.map((name) => (
-                  <option key={`${group.providerId}::${name}`} value={`${group.providerId}::${name}`}>
-                    {name}
+                {group.models.map((item) => (
+                  <option
+                    key={`${group.providerId}::${item.name}`}
+                    value={`${group.providerId}::${item.name}`}
+                  >
+                    {item.free ? `${item.name}（免费）` : item.name}
                   </option>
                 ))}
               </optgroup>
             ))}
           </select>
+          {current?.free && <span className="free-badge">免费</span>}
           <button
             className={pinnedOpen ? 'icon-btn pin active' : 'icon-btn pin'}
             title={pinnedOpen ? '取消钉住，点外部可关闭' : '钉在当前屏幕上'}
@@ -358,7 +379,9 @@ export function Panel(): JSX.Element {
       <div className="quote" title={init?.text ?? ''}>
         <div className="quote-label">
           选中的文字
-          {init && init.contextChars > 0 ? (
+          {init?.contextPending ? (
+            ' · 正在读取上下文…'
+          ) : init && init.contextChars > 0 ? (
             ' · 已结合上下文'
           ) : init?.contextEnabled ? (
             <span title="当前应用没有向系统暴露可选文本，本次只发送选中文字">
@@ -367,6 +390,12 @@ export function Panel(): JSX.Element {
             </span>
           ) : (
             ''
+          )}
+          {init?.truncated && (
+            <span className="quote-warn">
+              {' '}
+              · 已截断，仅发送前 {init.maxChars} 字
+            </span>
           )}
         </div>
         <p>{init?.text ?? ''}</p>

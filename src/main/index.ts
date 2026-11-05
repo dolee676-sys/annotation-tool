@@ -1,13 +1,16 @@
 import { BrowserWindow, app, clipboard, ipcMain, screen } from 'electron'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { chat, isLocalBaseUrl, listModels } from './ai'
 import { listInstalledApps } from './apps'
+import { compressHistory } from './compress'
 import { getSelectionContext } from './context'
-import { HistoryStore } from './history'
+import { HISTORY_REWRITE_BATCH, HistoryStore } from './history'
 import { buildSystemPrompt, buildUserMessage, markSelection } from './prompt'
 import { estimateCostCny } from '../shared/pricing'
+import { isFreeModel } from '../shared/presets'
 import { SelectionService, isUsablePoint, toDipPoint, type Point, type RawSelection } from './selection'
+import { isTrustedRendererUrl, rendererFileUrl } from './security'
 import { SettingsStore } from './settings'
 import { startMockServer } from './selftestMock'
 import { UsageStore } from './usage'
@@ -15,6 +18,7 @@ import { WindowManager } from './windows'
 import type {
   AppEntry,
   AppState,
+  HistoryCompressResult,
   PanelInit,
   PanelMode,
   PanelModelOption,
@@ -22,6 +26,7 @@ import type {
   SettingsPatch,
   TestProviderResult
 } from '../shared/types'
+import { HISTORY_KEEP_RECENT, HISTORY_LIMIT } from '../shared/types'
 
 const isSelftest = process.argv.includes('--selftest')
 
@@ -42,6 +47,7 @@ let usage: UsageStore
 let history: HistoryStore
 let windows: WindowManager
 let selection: SelectionService | null = null
+let compressingHistory = false
 
 interface ActiveSelection {
   text: string
@@ -49,6 +55,11 @@ interface ActiveSelection {
   truncated: boolean
   anchor: Point
   preferAbove: boolean
+}
+
+interface ConversationTurn {
+  question?: string
+  answer: string
 }
 
 interface ActiveAnnotation {
@@ -64,6 +75,8 @@ interface ActiveAnnotation {
   started: boolean
   pending: boolean
   pinned: boolean
+  contextPending: boolean
+  turns: ConversationTurn[]
   lastQuestion?: string
   controller: AbortController | null
 }
@@ -100,7 +113,7 @@ let pendingPanelInit: PanelInit | null = null
 let chipTimer: NodeJS.Timeout | null = null
 let selftestResolve: (() => void) | null = null
 const contextFailures = new Map<string, number>()
-const CONTEXT_RETRY_MS = 10 * 60 * 1000
+const CONTEXT_RETRY_MS = 2 * 60 * 1000
 
 function normalizeApp(name: string): string {
   return name.trim().toLowerCase().replace(/\.exe$/, '')
@@ -129,8 +142,14 @@ function buildModelOptions(currentProviderId: string, currentModel: string): Pan
   const options: PanelModelOption[] = []
   for (const provider of settings.getProvidersView()) {
     if (!isLocalBaseUrl(provider.baseUrl) && !provider.hasKey) continue
+    const local = isLocalBaseUrl(provider.baseUrl)
     for (const model of provider.models) {
-      options.push({ providerId: provider.id, providerName: provider.name, model })
+      options.push({
+        providerId: provider.id,
+        providerName: provider.name,
+        model,
+        free: isFreeModel(provider.presetId, model, local)
+      })
     }
   }
   if (!options.some((o) => o.providerId === currentProviderId && o.model === currentModel)) {
@@ -139,7 +158,12 @@ function buildModelOptions(currentProviderId: string, currentModel: string): Pan
       options.unshift({
         providerId: provider.id,
         providerName: provider.name,
-        model: currentModel
+        model: currentModel,
+        free: isFreeModel(
+          provider.presetId ?? provider.id,
+          currentModel,
+          isLocalBaseUrl(provider.baseUrl)
+        )
       })
     }
   }
@@ -156,7 +180,6 @@ function handleSelection(raw: RawSelection): void {
     hideChip()
     return
   }
-  if (rawText.length < 2) return
 
   const programName = (raw.programName || '未知应用').trim() || '未知应用'
   const before = settings.get().detectedApps.length
@@ -277,6 +300,11 @@ async function runAnnotationRequest(
     })
     if (activeAnnotation !== a || runId !== a.runId) return
     a.pending = false
+    a.turns.push({
+      question: options.historyMode === 'ask' ? options.question : undefined,
+      answer: result.text
+    })
+    if (a.turns.length > 6) a.turns = a.turns.slice(-6)
     const latencyMs = Date.now() - startedAt
     const cost = estimateCostCny({
       model: a.model,
@@ -372,6 +400,7 @@ async function startAnnotation(): Promise<void> {
   const a = activeAnnotation
   if (!a || a.mode === 'ask') return
   const s = settings.get()
+  a.turns = []
   await runAnnotationRequest(a, {
     system: buildSystemPrompt({
       mode: 'annotate',
@@ -407,7 +436,8 @@ async function askPanelQuestion(question: string): Promise<boolean> {
       text: a.text,
       question: q,
       context: a.context,
-      contextChars: s.contextChars
+      contextChars: s.contextChars,
+      turns: a.turns.slice(-4)
     }),
     historyMode: 'ask',
     followUp: true,
@@ -432,7 +462,6 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
   const fallbackModel = provider.models[0] || ''
   const model = s.defaultModel || fallbackModel
 
-  let context: string | undefined
   const selectedForContext = normalizeForMatch(sel.text)
   const contextApp = sel.programName || '未知应用'
   const lastContextFailure = contextFailures.get(contextApp)
@@ -441,35 +470,15 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
     contextEligible &&
     (!lastContextFailure || Date.now() - lastContextFailure > CONTEXT_RETRY_MS) &&
     !BrowserWindow.getFocusedWindow()
-  if (shouldTryContext) {
-    const result = await getSelectionContext(s.contextChars)
-    if (activeSelection !== sel) return
-    if (result.ok && result.text) {
-      const got = normalizeForMatch(result.selected ?? '')
-      const whole = normalizeForMatch(result.text)
-      const matches = got
-        ? got.includes(selectedForContext) || selectedForContext.includes(got)
-        : selectedForContext.length >= 6 && whole.includes(selectedForContext)
-      if (matches) {
-        context = result.text
-        contextFailures.delete(contextApp)
-      } else {
-        contextFailures.set(contextApp, Date.now())
-      }
-    } else {
-      contextFailures.set(contextApp, Date.now())
-    }
-    if (isSelftest) {
-      console.log(
-        '[selftest] context result',
-        JSON.stringify({ ok: result.ok, chars: context?.length ?? 0, error: result.error })
-      )
-    }
-  }
 
-  activeAnnotation = {
+  // 先启动 PowerShell 抓上下文，同时把面板显示出来；面板用 showInactive 出现，
+  // 不会抢走源应用焦点，因此 UIA 仍能读取原来的选区。
+  const contextPromise = shouldTryContext ? getSelectionContext(s.contextChars) : null
+  activeAnnotation?.controller?.abort()
+
+  const annotation: ActiveAnnotation = {
     mode,
-    context,
+    context: undefined,
     text: sel.text,
     programName: sel.programName,
     truncated: sel.truncated,
@@ -479,8 +488,11 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
     started: false,
     pending: false,
     pinned: false,
+    contextPending: Boolean(contextPromise),
+    turns: [],
     controller: null
   }
+  activeAnnotation = annotation
 
   const init: PanelInit = {
     mode,
@@ -491,13 +503,18 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
     model,
     options: buildModelOptions(provider.id, model),
     localOnly: s.localOnly,
-    contextChars: context?.length ?? 0,
-    contextEnabled: contextEligible
+    contextChars: 0,
+    contextEnabled: contextEligible,
+    contextPending: Boolean(contextPromise),
+    truncated: sel.truncated,
+    maxChars: s.maxChars
   }
 
   pendingPanelInit = init
-  const annotation = activeAnnotation
-  const panel = windows.openPanel({ x: sel.anchor.x, y: sel.anchor.y, preferAbove: sel.preferAbove })
+  const panel = windows.openPanel(
+    { x: sel.anchor.x, y: sel.anchor.y, preferAbove: sel.preferAbove },
+    { deferFocus: Boolean(contextPromise) }
+  )
   panel.on('closed', () => {
     if (activeAnnotation === annotation) {
       annotation.controller?.abort()
@@ -505,6 +522,54 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
     }
   })
   hideChip()
+
+  if (!contextPromise) return
+
+  const result = await contextPromise.catch((error) => ({
+    ok: false as const,
+    error: error instanceof Error ? error.message : String(error)
+  }))
+  if (activeAnnotation !== annotation) return
+
+  let context: string | undefined
+  if (result.ok && result.text) {
+    const got = normalizeForMatch(result.selected ?? '')
+    const whole = normalizeForMatch(result.text)
+    const matches = got
+      ? got.includes(selectedForContext) || selectedForContext.includes(got)
+      : selectedForContext.length >= 6 && whole.includes(selectedForContext)
+    if (matches) {
+      context = result.text
+      contextFailures.delete(contextApp)
+    } else {
+      contextFailures.set(contextApp, Date.now())
+    }
+  } else {
+    contextFailures.set(contextApp, Date.now())
+  }
+  if (isSelftest) {
+    console.log(
+      '[selftest] context result',
+      JSON.stringify({ ok: result.ok, chars: context?.length ?? 0, error: result.error })
+    )
+  }
+
+  annotation.context = context
+  annotation.contextPending = false
+  const contextPayload = {
+    contextChars: context?.length ?? 0,
+    contextEnabled: contextEligible,
+    contextPending: false
+  }
+  if (pendingPanelInit) {
+    pendingPanelInit.contextChars = contextPayload.contextChars
+    pendingPanelInit.contextEnabled = contextPayload.contextEnabled
+    pendingPanelInit.contextPending = false
+  }
+  if (annotation.started) windows.sendPanel('panel:context', contextPayload)
+  if (annotation.started && annotation.mode === 'annotate' && annotation.runId === 0) {
+    void startAnnotation()
+  }
 }
 
 function switchPanelModel(providerId: string, model: string): boolean {
@@ -514,6 +579,7 @@ function switchPanelModel(providerId: string, model: string): boolean {
   if (!provider || !model) return false
   a.providerId = provider.id
   a.model = model
+  a.turns = []
   settings.update({ defaultProviderId: provider.id, defaultModel: model })
   broadcastState()
   a.controller?.abort()
@@ -545,26 +611,59 @@ function broadcastState(): void {
 function applySideEffects(patch: SettingsPatch): void {
   if (patch.enabled === false) hideChip()
   if (typeof patch.launchAtLogin === 'boolean') {
+    if (!app.isPackaged) {
+      console.warn('[settings] 开发模式不注册开机启动，打包版才写入系统启动项')
+      return
+    }
     app.setLoginItemSettings({ openAtLogin: patch.launchAtLogin, path: process.execPath })
   }
 }
 
-function registerIpc(): void {
-  ipcMain.handle('state:get', () => state())
+function assertTrustedSender(event: Electron.IpcMainInvokeEvent): void {
+  const url = event.senderFrame?.url ?? ''
+  const trusted = isTrustedRendererUrl(
+    url,
+    rendererFileUrl(join(__dirname, '../renderer/index.html')),
+    process.env['ELECTRON_RENDERER_URL']
+  )
+  if (!trusted) throw new Error('拒绝来自不可信页面的请求')
+}
 
-  ipcMain.handle('apps:list', (_event, force?: boolean) => {
+function handle(
+  channel: string,
+  listener: (event: Electron.IpcMainInvokeEvent, ...args: any[]) => unknown
+): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    assertTrustedSender(event)
+    return listener(event, ...args)
+  })
+}
+
+function ensureSettingsSaved(): void {
+  if (!settings.flush()) {
+    throw new Error(
+      `设置已在本次运行中生效，但写入磁盘失败：${settings.getLastWriteError() ?? '未知错误'}`
+    )
+  }
+}
+
+function registerIpc(): void {
+  handle('state:get', () => state())
+
+  handle('apps:list', (_event, force?: boolean) => {
     if (isSelftest && process.env.ZHUJIE_DEMO_APPS === '1') return DEMO_APPS
     return listInstalledApps(Boolean(force))
   })
 
-  ipcMain.handle('settings:update', (_event, patch: SettingsPatch) => {
+  handle('settings:update', (_event, patch: SettingsPatch) => {
     settings.update(patch ?? {})
     applySideEffects(patch ?? {})
     broadcastState()
+    ensureSettingsSaved()
     return state()
   })
 
-  ipcMain.handle('provider:save', (_event, patch: ProviderPatch) => {
+  handle('provider:save', (_event, patch: ProviderPatch) => {
     if (!patch || !patch.baseUrl?.trim()) throw new Error('Base URL 不能为空')
     if (!/^https?:\/\//i.test(patch.baseUrl.trim())) {
       throw new Error('Base URL 必须以 http:// 或 https:// 开头')
@@ -574,16 +673,18 @@ function registerIpc(): void {
     }
     settings.saveProvider(patch)
     broadcastState()
+    ensureSettingsSaved()
     return state()
   })
 
-  ipcMain.handle('provider:remove', (_event, id: string) => {
+  handle('provider:remove', (_event, id: string) => {
     settings.removeProvider(String(id))
     broadcastState()
+    ensureSettingsSaved()
     return state()
   })
 
-  ipcMain.handle('provider:test', async (_event, id: string): Promise<TestProviderResult> => {
+  handle('provider:test', async (_event, id: string): Promise<TestProviderResult> => {
     const provider = settings.getProvider(String(id))
     if (!provider) return { ok: false, models: [], error: '模型服务不存在' }
     if (settings.get().localOnly && !isLocalBaseUrl(provider.baseUrl)) {
@@ -596,6 +697,13 @@ function registerIpc(): void {
         settings.update({ defaultProviderId: provider.id, defaultModel: models[0] })
       }
       broadcastState()
+      if (!settings.flush()) {
+        return {
+          ok: false,
+          models,
+          error: `连接成功，但模型列表写入磁盘失败：${settings.getLastWriteError() ?? '未知错误'}`
+        }
+      }
       return { ok: true, models }
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error)
@@ -608,37 +716,110 @@ function registerIpc(): void {
     }
   })
 
-  ipcMain.handle('usage:get', () => usage.summary())
-  ipcMain.handle('usage:clear', () => {
+  handle('usage:get', () => usage.summary())
+  handle('usage:clear', () => {
     usage.clear()
     return usage.summary()
   })
 
-  ipcMain.handle('history:list', () => history.list())
-  ipcMain.handle('history:delete', (_event, id: string) => {
+  handle('history:list', () => history.list(HISTORY_LIMIT))
+  handle('history:summaries', () => history.listSummaries())
+  handle('history:delete', (_event, id: string) => {
     history.remove(String(id))
-    return history.list()
+    return history.list(HISTORY_LIMIT)
   })
-  ipcMain.handle('history:clear', () => {
+  handle('history:clear', () => {
     history.clear()
-    return history.list()
+    return history.list(HISTORY_LIMIT)
+  })
+  handle('history:compress', async (): Promise<HistoryCompressResult> => {
+    const kept = history.list(HISTORY_LIMIT).length
+    if (compressingHistory) {
+      return { ok: false, error: '正在压缩历史记录，请等这次完成后再试。', compressed: 0, kept }
+    }
+    if (kept < HISTORY_LIMIT) {
+      return {
+        ok: false,
+        error: `历史记录达到 ${HISTORY_LIMIT} 条后才能压缩。`,
+        compressed: 0,
+        kept
+      }
+    }
+    const s = settings.get()
+    const provider = settings.getProvider(s.defaultProviderId)
+    const model = s.defaultModel || provider?.models[0] || ''
+    if (!provider) {
+      return { ok: false, error: '没有可用的模型服务，请先去「模型服务」配置。', compressed: 0, kept }
+    }
+    if (!model) {
+      return { ok: false, error: '还没有选择模型，请先去「模型服务」选择模型。', compressed: 0, kept }
+    }
+    if (s.localOnly && !isLocalBaseUrl(provider.baseUrl)) {
+      return {
+        ok: false,
+        error: '已开启「仅本机」模式，当前模型不是本机地址，压缩请求已被阻止。',
+        compressed: 0,
+        kept
+      }
+    }
+
+    compressingHistory = true
+    const startedAt = Date.now()
+    try {
+      const result = await compressHistory({
+        history,
+        usage,
+        provider,
+        apiKey: settings.apiKey(provider.id),
+        model,
+        onProgress: (progress) =>
+          windows.settings?.webContents.send('history:compress-progress', progress)
+      })
+      windows.settings?.webContents.send('history:changed')
+      windows.settings?.webContents.send('usage:changed')
+      return { ok: true, compressed: result.compressed, kept: result.kept, summary: result.summary }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      usage.add({
+        id: usage.newId(),
+        ts: Date.now(),
+        programName: '历史记录压缩',
+        providerId: provider.id,
+        providerName: provider.name,
+        model,
+        chars: 0,
+        contextChars: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        estimated: false,
+        cost: 0,
+        latencyMs: Date.now() - startedAt,
+        ok: false,
+        error: message
+      })
+      windows.settings?.webContents.send('usage:changed')
+      return { ok: false, error: message, compressed: 0, kept }
+    } finally {
+      compressingHistory = false
+    }
   })
 
-  ipcMain.handle('clipboard:write', (_event, text: string) => {
+  handle('clipboard:write', (_event, text: string) => {
     clipboard.writeText(String(text ?? ''))
     return true
   })
 
-  ipcMain.handle('chip:click', async (_event, action: string) => {
+  handle('chip:click', async (_event, action: string) => {
     await openAnnotationFromChip(action === 'ask' ? 'ask' : 'annotate')
     return true
   })
-  ipcMain.handle('chip:hide', () => {
+  handle('chip:hide', () => {
     hideChip()
     return true
   })
 
-  ipcMain.handle('panel:ready', () => {
+  handle('panel:ready', () => {
     if (isSelftest) console.log('[selftest] panel:ready', Boolean(activeAnnotation))
     if (!activeAnnotation || activeAnnotation.started) return false
     activeAnnotation.started = true
@@ -646,11 +827,13 @@ function registerIpc(): void {
       windows.sendPanel('panel:init', pendingPanelInit)
       pendingPanelInit = null
     }
-    if (activeAnnotation.mode === 'annotate') void startAnnotation()
+    if (activeAnnotation.mode === 'annotate' && !activeAnnotation.contextPending) {
+      void startAnnotation()
+    }
     return true
   })
 
-  ipcMain.handle('panel:close', () => {
+  handle('panel:close', () => {
     if (activeAnnotation) {
       activeAnnotation.controller?.abort()
       activeAnnotation.pending = false
@@ -659,7 +842,7 @@ function registerIpc(): void {
     return true
   })
 
-  ipcMain.handle('panel:regenerate', () => {
+  handle('panel:regenerate', () => {
     const a = activeAnnotation
     if (!a || a.mode === 'ask') return false
     a.controller?.abort()
@@ -668,31 +851,31 @@ function registerIpc(): void {
     return true
   })
 
-  ipcMain.handle('panel:ask', async (_event, question: string) =>
+  handle('panel:ask', async (_event, question: string) =>
     askPanelQuestion(String(question ?? ''))
   )
 
-  ipcMain.handle('panel:pin', (_event, pinned: boolean) => {
+  handle('panel:pin', (_event, pinned: boolean) => {
     if (activeAnnotation) activeAnnotation.pinned = Boolean(pinned)
     if (isSelftest) console.log('[selftest] pinned', Boolean(pinned))
     return true
   })
 
-  ipcMain.handle('panel:switch-model', (_event, payload: { providerId: string; model: string }) =>
+  handle('panel:switch-model', (_event, payload: { providerId: string; model: string }) =>
     switchPanelModel(String(payload?.providerId ?? ''), String(payload?.model ?? ''))
   )
 
-  ipcMain.handle('window:minimize', (event) => {
+  handle('window:minimize', (event) => {
     BrowserWindow.fromWebContents(event.sender)?.minimize()
     return true
   })
 
-  ipcMain.handle('window:hide', (event) => {
+  handle('window:hide', (event) => {
     BrowserWindow.fromWebContents(event.sender)?.hide()
     return true
   })
 
-  ipcMain.handle('app:quit', () => {
+  handle('app:quit', () => {
     windows.markQuitting()
     app.quit()
     return true
@@ -916,6 +1099,10 @@ async function runSelfTest(): Promise<void> {
     const firstDone = waitForPanelDone()
     const chip = windows.chip
     if (!chip) throw new Error('注解小框未创建')
+    const chipApi = await chip.webContents.executeJavaScript('Object.keys(window.zhujie).sort()')
+    if (JSON.stringify(chipApi) !== JSON.stringify(['chipClick'])) {
+      throw new Error('小框 preload 权限不符合预期')
+    }
     chip.webContents.sendInputEvent({ type: 'mouseDown', x: 44, y: 17, button: 'left', clickCount: 1 })
     chip.webContents.sendInputEvent({ type: 'mouseUp', x: 44, y: 17, button: 'left', clickCount: 1 })
     await firstDone
@@ -950,10 +1137,30 @@ async function runSelfTest(): Promise<void> {
     await captureWindow(windows.panel, join(outDir, 'panel-ask.png'))
     void askPanelQuestion('这段文字里的注意力权重是什么意思？')
     await askDone
+    const secondAskDone = waitForPanelDone()
+    void askPanelQuestion('再展开第二点')
+    await secondAskDone
     await new Promise((r) => setTimeout(r, 400))
+    if (!activeAnnotation || activeAnnotation.turns.length !== 2) {
+      throw new Error('多轮追问记忆不符合预期')
+    }
+    console.log('SELFTEST_TURNS', JSON.stringify({ turns: activeAnnotation.turns.length }))
     await captureWindow(windows.panel, join(outDir, 'panel-ask-answer.png'))
     const panelContents = windows.panel?.webContents
     if (panelContents) {
+      const panelApi = await panelContents.executeJavaScript('Object.keys(window.zhujie).sort()')
+      const forbidden = ['listHistory', 'updateSettings', 'saveProvider', 'clearHistory', 'quit'].filter(
+        (key) => panelApi.includes(key)
+      )
+      if (forbidden.length > 0) throw new Error(`面板 preload 暴露了敏感能力：${forbidden.join(',')}`)
+      await panelContents.executeJavaScript("location.href='file:///C:/Windows/win.ini'")
+      await new Promise((r) => setTimeout(r, 400))
+      const urlAfter = panelContents.isDestroyed() ? '' : panelContents.getURL()
+      if (!urlAfter.includes('#panel')) throw new Error('面板导航防护未生效')
+      console.log(
+        'SELFTEST_PANEL_SECURITY',
+        JSON.stringify({ api: panelApi, urlAfter })
+      )
       await panelContents.executeJavaScript("document.querySelector('.icon-btn.pin')?.click()")
       await new Promise((r) => setTimeout(r, 250))
       await captureWindow(windows.panel, join(outDir, 'panel-pinned.png'))
@@ -968,14 +1175,14 @@ async function runSelfTest(): Promise<void> {
     }
     const summaryAfter = usage.summary()
     if (
-      summaryAfter.total.requests !== 3 ||
-      summaryAfter.total.tokens !== 1200 ||
+      summaryAfter.total.requests !== 4 ||
+      summaryAfter.total.tokens !== 1600 ||
       summaryAfter.byModel.length !== 2
     ) {
       throw new Error('用量记录不符合预期')
     }
     const historyCount = history.list().length
-    if (historyCount !== 3) throw new Error('历史记录数量不符合预期')
+    if (historyCount !== 4) throw new Error('历史记录数量不符合预期')
     console.log('SELFTEST_HISTORY', JSON.stringify({ count: historyCount, costCheck }))
 
     usage.add({
@@ -1000,6 +1207,19 @@ async function runSelfTest(): Promise<void> {
     settings.clearDetectedApps()
     windows.openSettings()
     await new Promise((r) => setTimeout(r, 2200))
+    const settingsApi = await windows.settings?.webContents.executeJavaScript(
+      'Object.keys(window.zhujie).sort()'
+    )
+    if (
+      !Array.isArray(settingsApi) ||
+      !settingsApi.includes('listHistory') ||
+      settingsApi.includes('panelAsk') ||
+      settingsApi.includes('chipClick') ||
+      settingsApi.includes('quit')
+    ) {
+      throw new Error('设置窗口 preload 权限不符合预期')
+    }
+    console.log('SELFTEST_SETTINGS_SECURITY', JSON.stringify({ api: settingsApi }))
     await captureWindow(windows.settings, join(outDir, 'settings.png'))
 
     const settingsContents = windows.settings?.webContents
@@ -1065,6 +1285,116 @@ async function runSelfTest(): Promise<void> {
       })
     )
 
+    for (let i = 0; i < HISTORY_LIMIT; i += 1) {
+      const ask = i % 2 === 0
+      history.add({
+        id: `selftest-compress-${i}`,
+        ts: Date.now() - (HISTORY_LIMIT - i) * 60_000,
+        mode: ask ? 'ask' : 'annotate',
+        programName: '自测阅读器',
+        providerName: 'Mock',
+        model: 'mock-ollama',
+        text: `第 ${i} 条选中的段落，讨论注意力权重、上下文和模型输出之间的关系。`,
+        question: ask ? `第 ${i} 个问题：注意力权重为什么会随上下文变化？` : undefined,
+        answer: `第 ${i} 条回答：权重由 Query 与 Key 的相似度决定，经过 Softmax 归一化后分配注意力，因此不同上下文会得到不同结果。`,
+        totalTokens: 100,
+        cost: 0,
+        ok: true
+      })
+    }
+    const historyFile = join(app.getPath('userData'), 'history.jsonl')
+    const countHistoryLines = (): number =>
+      readFileSync(historyFile, 'utf8')
+        .split('\n')
+        .filter((line) => line.trim()).length
+    const seededHistoryLines = countHistoryLines()
+    if (seededHistoryLines > HISTORY_LIMIT + HISTORY_REWRITE_BATCH) {
+      throw new Error('历史文件未按批次压缩，出现无界增长')
+    }
+    console.log('SELFTEST_HISTORY_FILE', JSON.stringify({ lines: seededHistoryLines }))
+    windows.settings?.webContents.send('history:changed')
+    await clickNav(3)
+    await new Promise((r) => setTimeout(r, 700))
+    await captureWindow(windows.settings, join(outDir, 'history-full.png'))
+
+    const compressResult = await compressHistory({
+      history,
+      usage,
+      provider: ollamaProvider,
+      apiKey: '',
+      model: 'mock-ollama',
+      keepRecent: HISTORY_KEEP_RECENT
+    })
+    windows.settings?.webContents.send('history:changed')
+    windows.settings?.webContents.send('usage:changed')
+    await new Promise((r) => setTimeout(r, 700))
+    await captureWindow(windows.settings, join(outDir, 'history-compressed.png'))
+    const compressedSummaries = history.listSummaries()
+    const compactedHistoryLines = countHistoryLines()
+    if (compactedHistoryLines !== HISTORY_KEEP_RECENT) {
+      throw new Error('历史压缩后文件未同步重写')
+    }
+    console.log('SELFTEST_HISTORY_COMPACT', JSON.stringify({ lines: compactedHistoryLines }))
+    if (compressResult.compressed !== HISTORY_LIMIT - HISTORY_KEEP_RECENT) {
+      throw new Error('历史压缩条数不符合预期')
+    }
+    if (history.list().length !== HISTORY_KEEP_RECENT) throw new Error('历史压缩后保留条数不符合预期')
+    if (compressedSummaries.length !== 1) throw new Error('历史压缩摘要未保存')
+    if (compressedSummaries[0].sourceCount !== HISTORY_LIMIT - HISTORY_KEEP_RECENT) {
+      throw new Error('历史压缩摘要来源数量不符合预期')
+    }
+    if (!compressedSummaries[0].summary.includes('注意力')) {
+      throw new Error('历史压缩摘要内容不符合预期')
+    }
+    if (
+      !isFreeModel('ollama', 'any-model', true) ||
+      !isFreeModel('lmstudio', 'any-model', true) ||
+      !isFreeModel('zhipu', 'glm-4-flash', false) ||
+      isFreeModel('deepseek', 'deepseek-chat', false)
+    ) {
+      throw new Error('免费模型标识判断异常')
+    }
+    console.log(
+      'SELFTEST_COMPRESS',
+      JSON.stringify({
+        compressed: compressResult.compressed,
+        kept: compressResult.kept,
+        summaries: compressedSummaries.length,
+        summaryChars: compressedSummaries[0].summary.length,
+        tokens: compressedSummaries[0].totalTokens
+      })
+    )
+
+    windows.settings?.hide()
+    await new Promise((r) => setTimeout(r, 250))
+    settings.update({ maxChars: 100 })
+    handleSelection({
+      text: '这是一段用来验证截断提示的长文字。'.repeat(8),
+      programName: '自测阅读器',
+      startTop: { x: 300, y: 300 },
+      startBottom: { x: 300, y: 330 },
+      endTop: { x: 700, y: 300 },
+      endBottom: { x: 700, y: 330 },
+      mousePosEnd: { x: 700, y: 330 },
+      posLevel: 3
+    })
+    await new Promise((r) => setTimeout(r, 500))
+    const truncChip = windows.chip
+    if (!truncChip) throw new Error('截断测试小框未创建')
+    const truncDone = waitForPanelDone()
+    truncChip.webContents.sendInputEvent({ type: 'mouseDown', x: 44, y: 17, button: 'left', clickCount: 1 })
+    truncChip.webContents.sendInputEvent({ type: 'mouseUp', x: 44, y: 17, button: 'left', clickCount: 1 })
+    await truncDone
+    await new Promise((r) => setTimeout(r, 350))
+    const truncWarn = await windows.panel?.webContents.executeJavaScript(
+      "document.querySelector('.quote-warn')?.textContent || ''"
+    )
+    if (!String(truncWarn).includes('已截断')) throw new Error('超长选中截断提示未显示')
+    console.log('SELFTEST_TRUNCATION', JSON.stringify({ warn: truncWarn }))
+    await captureWindow(windows.panel, join(outDir, 'panel-truncated.png'))
+    windows.closePanel()
+    settings.update({ maxChars: 2000 })
+
     const summary = usage.summary()
     writeFileSync(
       join(outDir, 'result.json'),
@@ -1084,6 +1414,8 @@ async function runSelfTest(): Promise<void> {
           },
           history: {
             count: history.list().length,
+            summaries: compressedSummaries.length,
+            compressed: compressResult.compressed,
             costCheck
           },
           context: contextProbeResult

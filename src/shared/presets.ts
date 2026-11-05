@@ -12,6 +12,8 @@ export interface ProviderPreset {
   priceOut: number
   keyUrl?: string
   keyHint?: string
+  free?: boolean
+  freeModels?: string[]
 }
 
 const BASE_PRESETS: Array<Omit<ProviderPreset, 'priceIn' | 'priceOut'>> = [
@@ -22,7 +24,8 @@ const BASE_PRESETS: Array<Omit<ProviderPreset, 'priceIn' | 'priceOut'>> = [
     kind: 'ollama',
     baseUrl: 'http://127.0.0.1:11434',
     local: true,
-    models: []
+    models: [],
+    free: true
   },
   {
     id: 'lmstudio',
@@ -31,7 +34,8 @@ const BASE_PRESETS: Array<Omit<ProviderPreset, 'priceIn' | 'priceOut'>> = [
     kind: 'openai',
     baseUrl: 'http://127.0.0.1:1234/v1',
     local: true,
-    models: []
+    models: [],
+    free: true
   },
   {
     id: 'deepseek',
@@ -75,7 +79,8 @@ const BASE_PRESETS: Array<Omit<ProviderPreset, 'priceIn' | 'priceOut'>> = [
     local: false,
     models: ['glm-4-plus', 'glm-4-air', 'glm-4-flash'],
     keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
-    keyHint: '...'
+    keyHint: '...',
+    freeModels: ['glm-4-flash']
   },
   {
     id: 'openai',
@@ -116,4 +121,14 @@ export function isLocalAddress(baseUrl: string): boolean {
   } catch {
     return false
   }
+}
+
+export function isFreeModel(presetId: string | undefined, model: string, local: boolean): boolean {
+  if (local) return true
+  const preset = presetId ? presetById(presetId) : undefined
+  if (!preset) return false
+  if (preset.free) return true
+  const name = model.trim().toLowerCase()
+  if (!name) return false
+  return (preset.freeModels ?? []).some((free) => name === free.toLowerCase())
 }

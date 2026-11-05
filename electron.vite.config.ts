@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 import type { Plugin } from 'vite'
 
 const CSP =
-  "default-src 'self' file:; script-src 'self' file:; style-src 'self' 'unsafe-inline' file:; img-src 'self' data: file:; font-src 'self' data: file:; connect-src 'self' ws: http: https:"
+  "default-src 'self' file:; script-src 'self' file:; style-src 'self' 'unsafe-inline' file:; img-src 'self' data: file:; font-src 'self' data: file:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-src 'none'"
 
 // Only inject CSP for the packaged renderer. In dev, Vite needs an inline
 // refresh preamble that would otherwise be blocked.
@@ -21,7 +21,16 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()]
   },
   preload: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          panel: resolve(__dirname, 'src/preload/panel.ts'),
+          chip: resolve(__dirname, 'src/preload/chip.ts')
+        }
+      }
+    }
   },
   renderer: {
     plugins: [react(), injectCsp()],

@@ -1,35 +1,28 @@
 import { app } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { HistoryRecord } from '../shared/types'
+import { HISTORY_LIMIT, type HistoryRecord, type HistorySummary } from '../shared/types'
 
-const MAX_RECORDS = 1000
+const MAX_SUMMARIES = 50
+export const HISTORY_REWRITE_BATCH = 25
 
 export class HistoryStore {
   private file: string
+  private summaryFile: string
   private records: HistoryRecord[] = []
+  private summaries: HistorySummary[] = []
+  private pendingDrops = 0
 
   constructor() {
     const dir = app.getPath('userData')
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     this.file = join(dir, 'history.jsonl')
-    if (existsSync(this.file)) {
-      try {
-        for (const line of readFileSync(this.file, 'utf8').split('\n')) {
-          if (!line.trim()) continue
-          try {
-            this.records.push(JSON.parse(line) as HistoryRecord)
-          } catch {
-            /* skip malformed line */
-          }
-        }
-      } catch {
-        /* start empty if unreadable */
-      }
-    }
-    if (this.records.length > MAX_RECORDS) {
-      this.records = this.records.slice(-MAX_RECORDS)
-      this.rewrite()
+    this.summaryFile = join(dir, 'history-summaries.json')
+    this.records = readRecords(this.file)
+    this.summaries = readSummaries(this.summaryFile)
+    if (this.records.length > HISTORY_LIMIT) {
+      this.records = this.records.slice(-HISTORY_LIMIT)
+      if (this.rewriteRecords()) this.pendingDrops = 0
     }
   }
 
@@ -39,35 +32,105 @@ export class HistoryStore {
 
   add(record: HistoryRecord): void {
     this.records.push(record)
-    if (this.records.length > MAX_RECORDS) this.records = this.records.slice(-MAX_RECORDS)
+    if (this.records.length > HISTORY_LIMIT) {
+      this.pendingDrops += this.records.length - HISTORY_LIMIT
+      this.records = this.records.slice(-HISTORY_LIMIT)
+      if (this.pendingDrops >= HISTORY_REWRITE_BATCH && this.rewriteRecords()) {
+        this.pendingDrops = 0
+        return
+      }
+    }
     try {
       appendFileSync(this.file, `${JSON.stringify(record)}\n`, 'utf8')
-    } catch {
-      /* keep in-memory copy */
+    } catch (error) {
+      console.error('[history] 追加记录失败，保留在内存中', error)
     }
   }
 
-  list(limit = 200): HistoryRecord[] {
+  list(limit = HISTORY_LIMIT): HistoryRecord[] {
     return this.records.slice(-limit).reverse()
+  }
+
+  all(): HistoryRecord[] {
+    return [...this.records]
   }
 
   remove(id: string): void {
     this.records = this.records.filter((record) => record.id !== id)
-    this.rewrite()
+    if (this.rewriteRecords()) this.pendingDrops = 0
+  }
+
+  removeMany(ids: Set<string>): void {
+    if (ids.size === 0) return
+    this.records = this.records.filter((record) => !ids.has(record.id))
+    if (this.rewriteRecords()) this.pendingDrops = 0
+  }
+
+  listSummaries(): HistorySummary[] {
+    return [...this.summaries].reverse()
+  }
+
+  addSummary(summary: HistorySummary): void {
+    this.summaries.push(summary)
+    if (this.summaries.length > MAX_SUMMARIES) {
+      this.summaries = this.summaries.slice(-MAX_SUMMARIES)
+    }
+    this.rewriteSummaries()
   }
 
   clear(): void {
     this.records = []
-    this.rewrite()
+    this.summaries = []
+    this.pendingDrops = 0
+    this.rewriteRecords()
+    this.rewriteSummaries()
   }
 
-  private rewrite(): void {
-    try {
-      const tmp = `${this.file}.tmp`
-      writeFileSync(tmp, this.records.map((record) => JSON.stringify(record)).join('\n'), 'utf8')
-      renameSync(tmp, this.file)
-    } catch {
-      /* ignore disk errors */
+  private rewriteRecords(): boolean {
+    return writeAtomic(this.file, this.records.map((record) => JSON.stringify(record)).join('\n'))
+  }
+
+  private rewriteSummaries(): boolean {
+    return writeAtomic(this.summaryFile, JSON.stringify(this.summaries, null, 2))
+  }
+}
+
+function readRecords(file: string): HistoryRecord[] {
+  if (!existsSync(file)) return []
+  const records: HistoryRecord[] = []
+  try {
+    for (const line of readFileSync(file, 'utf8').split('\n')) {
+      if (!line.trim()) continue
+      try {
+        records.push(JSON.parse(line) as HistoryRecord)
+      } catch {
+        /* skip malformed line */
+      }
     }
+  } catch {
+    /* start empty if unreadable */
+  }
+  return records
+}
+
+function readSummaries(file: string): HistorySummary[] {
+  if (!existsSync(file)) return []
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8')) as unknown
+    return Array.isArray(parsed) ? (parsed as HistorySummary[]) : []
+  } catch {
+    return []
+  }
+}
+
+function writeAtomic(file: string, content: string): boolean {
+  try {
+    const tmp = `${file}.tmp`
+    writeFileSync(tmp, content, 'utf8')
+    renameSync(tmp, file)
+    return true
+  } catch (error) {
+    console.error('[history] 写入失败，保留内存副本', error)
+    return false
   }
 }

@@ -1,7 +1,38 @@
 import { BrowserWindow, Menu, Tray, app, nativeImage, screen, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-const preloadPath = (): string => join(__dirname, '../preload/index.js')
+import { isTrustedRendererUrl, rendererFileUrl } from './security'
+
+const preloadPath = (name: 'index' | 'panel' | 'chip'): string =>
+  join(__dirname, '../preload', `${name}.js`)
+
+const rendererIndex = (): string => join(__dirname, '../renderer/index.html')
+
+function isTrustedUrl(url: string): boolean {
+  return isTrustedRendererUrl(
+    url,
+    rendererFileUrl(rendererIndex()),
+    process.env['ELECTRON_RENDERER_URL']
+  )
+}
+
+function hardenWindow(win: BrowserWindow): void {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  const guard = (event: Electron.Event, url: string): void => {
+    if (isTrustedUrl(url)) return
+    event.preventDefault()
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
+  }
+  win.webContents.on('will-navigate', guard)
+  win.webContents.on('will-redirect', guard)
+  win.webContents.on('will-frame-navigate', (details) => {
+    if (details.isMainFrame || isTrustedUrl(details.url)) return
+    details.preventDefault()
+  })
+}
 
 function debugWindow(win: BrowserWindow): void {
   if (!process.argv.includes('--selftest')) return
@@ -73,15 +104,16 @@ export class WindowManager {
       hasShadow: false,
       backgroundColor: '#00000000',
       webPreferences: {
-        preload: preloadPath(),
+        preload: preloadPath('chip'),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false
+        sandbox: true
       }
     })
     this.chip.setAlwaysOnTop(true, 'screen-saver')
     this.chip.setHasShadow(false)
     this.chip.setMenu(null)
+    hardenWindow(this.chip)
     loadPage(this.chip, 'chip')
     this.chip.on('closed', () => {
       this.chip = null
@@ -112,7 +144,10 @@ export class WindowManager {
     return this.chip.getBounds()
   }
 
-  openPanel(anchor: { x: number; y: number; preferAbove: boolean }): BrowserWindow {
+  openPanel(
+    anchor: { x: number; y: number; preferAbove: boolean },
+    options: { deferFocus?: boolean } = {}
+  ): BrowserWindow {
     this.hideChip()
     if (this.panel && !this.panel.isDestroyed()) {
       this.panel.destroy()
@@ -148,10 +183,10 @@ export class WindowManager {
       alwaysOnTop: true,
       backgroundColor: '#00000000',
       webPreferences: {
-        preload: preloadPath(),
+        preload: preloadPath('panel'),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false
+        sandbox: true
       }
     })
     panel.setAlwaysOnTop(true, 'floating')
@@ -161,14 +196,14 @@ export class WindowManager {
     panel.on('closed', () => {
       if (this.panel === panel) this.panel = null
     })
-    panel.webContents.setWindowOpenHandler(({ url }) => {
-      if (/^https?:\/\//.test(url)) void shell.openExternal(url)
-      return { action: 'deny' }
-    })
+    hardenWindow(panel)
     loadPage(panel, 'panel')
     panel.once('ready-to-show', () => {
-      panel.show()
-      panel.focus()
+      if (options.deferFocus) panel.showInactive()
+      else {
+        panel.show()
+        panel.focus()
+      }
     })
     return panel
   }
@@ -198,13 +233,14 @@ export class WindowManager {
       backgroundColor: '#f7f4ed',
       autoHideMenuBar: true,
       webPreferences: {
-        preload: preloadPath(),
+        preload: preloadPath('index'),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false
+        sandbox: true
       }
     })
     this.settings.setMenu(null)
+    hardenWindow(this.settings)
     this.settings.once('ready-to-show', () => {
       this.settings?.show()
       this.settings?.focus()
@@ -217,10 +253,6 @@ export class WindowManager {
     })
     this.settings.on('closed', () => {
       this.settings = null
-    })
-    this.settings.webContents.setWindowOpenHandler(({ url }) => {
-      if (/^https?:\/\//.test(url)) void shell.openExternal(url)
-      return { action: 'deny' }
     })
     loadPage(this.settings)
   }
