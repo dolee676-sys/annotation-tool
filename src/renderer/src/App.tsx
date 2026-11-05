@@ -1249,7 +1249,7 @@ export function App(): JSX.Element {
                       <summary>列表里没有我要的模型？手动填写</summary>
                       <input
                         value={modelDraft}
-                        placeholder="直接输入模型名，例如 deepseek-chat"
+                        placeholder="直接输入模型名，例如 deepseek-flash"
                         onChange={(event) => setModelDraft(event.target.value)}
                       />
                     </details>

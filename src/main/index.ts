@@ -1294,7 +1294,7 @@ async function runSelfTest(): Promise<void> {
     }
     process.env.ZHUJIE_DEMO_APPS = '1'
     const costCheck = estimateCostCny({
-      model: 'deepseek-chat',
+      model: 'deepseek-flash',
       promptTokens: 1_000_000,
       completionTokens: 1_000_000,
       local: false
@@ -1473,7 +1473,7 @@ async function runSelfTest(): Promise<void> {
       programName: '自测阅读器',
       providerId: 'deepseek',
       providerName: 'DeepSeek（计费样例）',
-      model: 'deepseek-chat',
+      model: 'deepseek-flash',
       chars: 20,
       promptTokens: 800,
       completionTokens: 500,
@@ -1672,7 +1672,7 @@ async function runSelfTest(): Promise<void> {
       !isFreeModel('ollama', 'any-model', true) ||
       !isFreeModel('lmstudio', 'any-model', true) ||
       !isFreeModel('zhipu', 'glm-4-flash', false) ||
-      isFreeModel('deepseek', 'deepseek-chat', false)
+      isFreeModel('deepseek', 'deepseek-flash', false)
     ) {
       throw new Error('免费模型标识判断异常')
     }
