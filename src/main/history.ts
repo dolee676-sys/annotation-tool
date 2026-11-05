@@ -30,20 +30,22 @@ export class HistoryStore {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   }
 
-  add(record: HistoryRecord): void {
+  add(record: HistoryRecord): boolean {
     this.records.push(record)
     if (this.records.length > HISTORY_LIMIT) {
       this.pendingDrops += this.records.length - HISTORY_LIMIT
       this.records = this.records.slice(-HISTORY_LIMIT)
       if (this.pendingDrops >= HISTORY_REWRITE_BATCH && this.rewriteRecords()) {
         this.pendingDrops = 0
-        return
+        return true
       }
     }
     try {
       appendFileSync(this.file, `${JSON.stringify(record)}\n`, 'utf8')
+      return true
     } catch (error) {
-      console.error('[history] 追加记录失败，保留在内存中', error)
+      console.error('[history] 追加记录失败，尝试重写并保留在内存中', error)
+      return this.rewriteRecords()
     }
   }
 
@@ -55,35 +57,71 @@ export class HistoryStore {
     return [...this.records]
   }
 
-  remove(id: string): void {
-    this.records = this.records.filter((record) => record.id !== id)
-    if (this.rewriteRecords()) this.pendingDrops = 0
+  remove(id: string): boolean {
+    return this.removeMany(new Set([id]))
   }
 
-  removeMany(ids: Set<string>): void {
-    if (ids.size === 0) return
+  removeMany(ids: Set<string>): boolean {
+    if (ids.size === 0) return true
+    const previous = this.records
     this.records = this.records.filter((record) => !ids.has(record.id))
-    if (this.rewriteRecords()) this.pendingDrops = 0
+    if (this.rewriteRecords()) {
+      this.pendingDrops = 0
+      return true
+    }
+    this.records = previous
+    return false
   }
 
   listSummaries(): HistorySummary[] {
     return [...this.summaries].reverse()
   }
 
-  addSummary(summary: HistorySummary): void {
-    this.summaries.push(summary)
-    if (this.summaries.length > MAX_SUMMARIES) {
-      this.summaries = this.summaries.slice(-MAX_SUMMARIES)
-    }
-    this.rewriteSummaries()
+  addSummary(summary: HistorySummary): boolean {
+    const previous = this.summaries
+    const next = [...this.summaries, summary]
+    this.summaries = next.length > MAX_SUMMARIES ? next.slice(-MAX_SUMMARIES) : next
+    if (this.rewriteSummaries()) return true
+    this.summaries = previous
+    return false
   }
 
-  clear(): void {
+  commitCompression(summary: HistorySummary, ids: Set<string>): boolean {
+    if (ids.size === 0) return false
+    const previousSummaries = this.summaries
+    const previousRecords = this.records
+    const next = [...this.summaries, summary]
+    this.summaries = next.length > MAX_SUMMARIES ? next.slice(-MAX_SUMMARIES) : next
+    if (!this.rewriteSummaries()) {
+      this.summaries = previousSummaries
+      return false
+    }
+
+    this.records = this.records.filter((record) => !ids.has(record.id))
+    if (!this.rewriteRecords()) {
+      this.records = previousRecords
+      this.summaries = previousSummaries
+      this.rewriteSummaries()
+      return false
+    }
+    this.pendingDrops = 0
+    return true
+  }
+
+  clear(): boolean {
+    const previousRecords = this.records
+    const previousSummaries = this.summaries
     this.records = []
     this.summaries = []
     this.pendingDrops = 0
+    const recordsOk = this.rewriteRecords()
+    const summariesOk = this.rewriteSummaries()
+    if (recordsOk && summariesOk) return true
+    this.records = previousRecords
+    this.summaries = previousSummaries
     this.rewriteRecords()
     this.rewriteSummaries()
+    return false
   }
 
   private rewriteRecords(): boolean {

@@ -1,15 +1,17 @@
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   AppEntry,
   AppState,
+  FavoriteRecord,
   HistoryRecord,
   HistorySummary,
   ProviderKind,
   ProviderPatch,
   ProviderView,
   SettingsPatch,
+  UpdateProgress,
   UsageSummary
 } from '../../shared/types'
 import { DEFAULT_PROMPT, HISTORY_KEEP_RECENT, HISTORY_LIMIT } from '../../shared/types'
@@ -18,7 +20,7 @@ import { formatCny, formatUsageMultiplier, usageMultiplier } from '../../shared/
 
 marked.setOptions({ gfm: true, breaks: true })
 
-type Tab = 'apps' | 'models' | 'prompt' | 'history' | 'usage' | 'about'
+type Tab = 'apps' | 'models' | 'prompt' | 'history' | 'favorites' | 'usage' | 'about'
 
 interface TestState {
   loading?: boolean
@@ -61,6 +63,7 @@ const NAV: Array<{ id: Tab; label: string; icon: string }> = [
   { id: 'models', label: '模型服务', icon: 'chip' },
   { id: 'prompt', label: '注解提示词', icon: 'text' },
   { id: 'history', label: '历史记录', icon: 'clock' },
+  { id: 'favorites', label: '收藏', icon: 'star' },
   { id: 'usage', label: '用量统计', icon: 'bars' },
   { id: 'about', label: '关于', icon: 'info' }
 ]
@@ -102,6 +105,9 @@ function Icon({ name }: { name: string }): JSX.Element {
         <circle cx="12" cy="12" r="9" />
         <path d="M12 7v5l3.5 2" />
       </>
+    ),
+    star: (
+      <path d="M12 3.2l2.7 5.5 6 .9-4.3 4.2 1 6-5.4-2.8-5.4 2.8 1-6-4.3-4.2 6-.9L12 3.2z" />
     )
   }
   return (
@@ -162,6 +168,7 @@ export function App(): JSX.Element {
   const [state, setState] = useState<AppState | null>(null)
   const [usage, setUsage] = useState<UsageSummary | null>(null)
   const [tab, setTab] = useState<Tab>('apps')
+  const [tabInitialized, setTabInitialized] = useState(false)
   const [toast, setToast] = useState('')
   const [appInput, setAppInput] = useState('')
   const [promptDraft, setPromptDraft] = useState('')
@@ -184,11 +191,34 @@ export function App(): JSX.Element {
   const [selectedHistoryId, setSelectedHistoryId] = useState('')
   const [summaries, setSummaries] = useState<HistorySummary[]>([])
   const [compressState, setCompressState] = useState<CompressState | null>(null)
+  const [favorites, setFavorites] = useState<FavoriteRecord[] | null>(null)
+  const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null)
+  const [hookBusy, setHookBusy] = useState(false)
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const tabRef = useRef(tab)
+  const historyDirty = useRef(false)
+  const favoritesDirty = useRef(false)
+  const usageDirty = useRef(false)
+
+  useEffect(() => {
+    tabRef.current = tab
+  }, [tab])
 
   const flash = useCallback((message: string) => {
     setToast(message)
-    setTimeout(() => setToast(''), 2200)
+    if (toastTimer.current) clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => {
+      setToast('')
+      toastTimer.current = null
+    }, 2200)
   }, [])
+
+  useEffect(
+    () => () => {
+      if (toastTimer.current) clearTimeout(toastTimer.current)
+    },
+    []
+  )
 
   const refreshUsage = useCallback(async () => {
     setUsage(await window.zhujie.getUsage())
@@ -224,7 +254,51 @@ export function App(): JSX.Element {
     if (tab === 'history' && historyItems === null) void loadHistory()
   }, [tab, historyItems, loadHistory])
 
-  useEffect(() => window.zhujie.on('history:changed', () => void loadHistory()), [loadHistory])
+  useEffect(
+    () =>
+      window.zhujie.on('history:changed', () => {
+        if (tabRef.current === 'history' && !document.hidden) void loadHistory()
+        else historyDirty.current = true
+      }),
+    [loadHistory]
+  )
+
+  const loadFavorites = useCallback(async () => {
+    setFavorites(await window.zhujie.listFavorites())
+  }, [])
+
+  useEffect(() => {
+    if (tab === 'favorites' && favorites === null) void loadFavorites()
+  }, [tab, favorites, loadFavorites])
+
+  useEffect(
+    () =>
+      window.zhujie.on('favorites:changed', () => {
+        if (tabRef.current === 'favorites' && !document.hidden) void loadFavorites()
+        else favoritesDirty.current = true
+      }),
+    [loadFavorites]
+  )
+
+  useEffect(() => {
+    if (tab === 'history' && historyDirty.current) {
+      historyDirty.current = false
+      void loadHistory()
+    }
+    if (tab === 'favorites' && favoritesDirty.current) {
+      favoritesDirty.current = false
+      void loadFavorites()
+    }
+    if (tab === 'usage' && usageDirty.current) {
+      usageDirty.current = false
+      void refreshUsage()
+    }
+  }, [tab, loadHistory, loadFavorites, refreshUsage])
+
+  useEffect(
+    () => window.zhujie.on('update:progress', (payload) => setUpdateProgress(payload)),
+    []
+  )
 
   useEffect(
     () =>
@@ -249,7 +323,10 @@ export function App(): JSX.Element {
       setPromptDraft(next.settings.prompt)
     })()
     const offState = window.zhujie.on('state:changed', (next: AppState) => setState(next))
-    const offUsage = window.zhujie.on('usage:changed', () => void refreshUsage())
+    const offUsage = window.zhujie.on('usage:changed', () => {
+      if (tabRef.current === 'usage' && !document.hidden) void refreshUsage()
+      else usageDirty.current = true
+    })
     return () => {
       alive = false
       offState()
@@ -260,6 +337,12 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (state && !promptDirty) setPromptDraft(state.settings.prompt)
   }, [state, promptDirty])
+
+  useEffect(() => {
+    if (!state || tabInitialized) return
+    if (!state.settings.defaultModel) setTab('models')
+    setTabInitialized(true)
+  }, [state, tabInitialized])
 
   const patch = async (next: SettingsPatch, note?: string): Promise<void> => {
     try {
@@ -322,36 +405,94 @@ export function App(): JSX.Element {
 
   const testProvider = async (id: string): Promise<void> => {
     setTests((prev) => ({ ...prev, [id]: { loading: true } }))
-    const result = await window.zhujie.testProvider(id)
-    setTests((prev) => ({
-      ...prev,
-      [id]: { ok: result.ok, error: result.error, models: result.models.length }
-    }))
-    if (result.ok) {
-      setState(await window.zhujie.getState())
-      flash(`连接成功，发现 ${result.models.length} 个模型`)
+    try {
+      const result = await window.zhujie.testProvider(id)
+      setTests((prev) => ({
+        ...prev,
+        [id]: { ok: result.ok, error: result.error, models: result.models.length }
+      }))
+      if (result.ok) {
+        setState(await window.zhujie.getState())
+        flash(`连接成功，发现 ${result.models.length} 个模型`)
+      }
+    } catch (error) {
+      const message = readableError(error)
+      setTests((prev) => ({ ...prev, [id]: { ok: false, error: message } }))
+      flash(message)
     }
   }
 
   const clearUsage = async (): Promise<void> => {
     if (!window.confirm('确定清空本机用量记录？此操作不可恢复。')) return
-    setUsage(await window.zhujie.clearUsage())
-    flash('用量记录已清空')
+    try {
+      setUsage(await window.zhujie.clearUsage())
+      flash('用量记录已清空')
+    } catch (error) {
+      flash(readableError(error))
+    }
   }
 
   const removeHistory = async (id: string): Promise<void> => {
-    const items = await window.zhujie.deleteHistory(id)
-    setHistoryItems(items)
-    setSelectedHistoryId(items[0]?.id ?? '')
-    flash('历史记录已删除')
+    try {
+      const items = await window.zhujie.deleteHistory(id)
+      setHistoryItems(items)
+      setSelectedHistoryId(items[0]?.id ?? '')
+      flash('历史记录已删除')
+    } catch (error) {
+      flash(readableError(error))
+    }
   }
 
   const clearHistory = async (): Promise<void> => {
     if (!window.confirm('清空全部历史记录和综合摘要？此操作不可恢复。')) return
-    await window.zhujie.clearHistory()
-    await loadHistory()
-    setSelectedHistoryId('')
-    flash('历史记录已清空')
+    try {
+      await window.zhujie.clearHistory()
+      await loadHistory()
+      setSelectedHistoryId('')
+      flash('历史记录已清空')
+    } catch (error) {
+      flash(readableError(error))
+    }
+  }
+
+  const removeFavorite = async (id: string): Promise<void> => {
+    try {
+      setFavorites(await window.zhujie.deleteFavorite(id))
+      flash('收藏已删除')
+    } catch (error) {
+      flash(readableError(error))
+    }
+  }
+
+  const clearFavorites = async (): Promise<void> => {
+    if (!window.confirm('清空全部收藏？此操作不可恢复。')) return
+    try {
+      setFavorites(await window.zhujie.clearFavorites())
+      flash('收藏已清空')
+    } catch (error) {
+      flash(readableError(error))
+    }
+  }
+
+  const restartHook = async (): Promise<void> => {
+    setHookBusy(true)
+    try {
+      setState(await window.zhujie.restartHook())
+      flash('取词服务已重启')
+    } catch (error) {
+      flash(readableError(error))
+    } finally {
+      setHookBusy(false)
+    }
+  }
+
+  const downloadUpdate = async (): Promise<void> => {
+    try {
+      const status = await window.zhujie.downloadUpdate()
+      if (status.phase === 'error') flash(status.message ?? '下载更新失败')
+    } catch (error) {
+      flash(readableError(error))
+    }
   }
 
   const compressHistory = async (): Promise<void> => {
@@ -864,6 +1005,9 @@ export function App(): JSX.Element {
                   <strong>取词服务启动失败</strong>
                   <p>{state.hookError}</p>
                   <p className="muted">可尝试以管理员身份运行，或检查是否有安全软件拦截全局钩子。</p>
+                  <button className="ghost" disabled={hookBusy} onClick={() => void restartHook()}>
+                    {hookBusy ? '正在重启…' : '重启取词服务'}
+                  </button>
                 </div>
               )}
             </section>
@@ -1025,7 +1169,7 @@ export function App(): JSX.Element {
                     )}
                   </label>
                   <p className="hint">
-                    模型旁的倍率以 deepseek-chat 为 1×，按每百万 tokens 输入+输出价格估算；数字越小越省，仅用于横向比较，实际费用以用量页为准。
+                    模型旁的倍率以 deepseek-chat 为 1.00×，精确到 0.01×；按每百万 tokens 输入+输出价格估算，数字越小越省，仅用于横向比较，实际费用以用量页为准。
                   </p>
 
                   {!activePreset.local && (
@@ -1531,6 +1675,40 @@ export function App(): JSX.Element {
             </section>
           )}
 
+          {tab === 'favorites' && (
+            <section className="section">
+              <header className="section-head">
+                <div>
+                  <h1>收藏</h1>
+                  <p>在注解面板点右上角星星，收藏当前的问答；只保存在本机。</p>
+                </div>
+                <button
+                  className="ghost danger"
+                  disabled={!favorites?.length}
+                  onClick={() => void clearFavorites()}
+                >
+                  清空收藏
+                </button>
+              </header>
+
+              {!favorites || favorites.length === 0 ? (
+                <div className="panel-card empty tall">
+                  还没有收藏。打开一条注解或提问，点右上角的星星即可收藏当前问答。
+                </div>
+              ) : (
+                <div className="favorite-list">
+                  {favorites.map((favorite) => (
+                    <FavoriteCard
+                      key={favorite.id}
+                      favorite={favorite}
+                      onDelete={() => void removeFavorite(favorite.id)}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
           {tab === 'usage' && (
             <section className="section">
               <header className="section-head">
@@ -1538,9 +1716,17 @@ export function App(): JSX.Element {
                   <h1>用量统计</h1>
                   <p>记录每次注解/提问的模型、token、费用与耗时，数据只写在本机。</p>
                 </div>
-                <button className="ghost danger" onClick={() => void clearUsage()}>
-                  清空记录
-                </button>
+                <div className="head-actions">
+                  <button
+                    className="ghost"
+                    onClick={() => void refreshUsage().then(() => flash('用量已刷新'))}
+                  >
+                    刷新
+                  </button>
+                  <button className="ghost danger" onClick={() => void clearUsage()}>
+                    清空记录
+                  </button>
+                </div>
               </header>
 
               {!usage || usage.total.requests === 0 ? (
@@ -1729,7 +1915,12 @@ export function App(): JSX.Element {
                 </div>
                 <div>
                   <span className="muted">取词服务</span>
-                  <strong>{state.hookStatus === 'running' ? '运行中' : state.hookStatus}</strong>
+                  <div className="copy-line">
+                    <strong>{state.hookStatus === 'running' ? '运行中' : state.hookStatus}</strong>
+                    <button className="link" disabled={hookBusy} onClick={() => void restartHook()}>
+                      {hookBusy ? '重启中…' : '重启'}
+                    </button>
+                  </div>
                 </div>
                 <div>
                   <span className="muted">数据目录</span>
@@ -1745,6 +1936,69 @@ export function App(): JSX.Element {
                       复制
                     </button>
                   </div>
+                </div>
+              </div>
+
+              <div className="panel-card update-card">
+                <div className="card-head">
+                  <h2>版本更新</h2>
+                  <span className="muted">当前 v{state.version}</span>
+                </div>
+                <p className="muted">
+                  {state.update.phase === 'idle' && '应用会在启动后自动检查 GitHub Releases。'}
+                  {state.update.phase === 'checking' && '正在检查更新…'}
+                  {state.update.phase === 'latest' &&
+                    `已是最新版本${state.update.latestVersion ? ` v${state.update.latestVersion}` : ''}。`}
+                  {state.update.phase === 'available' &&
+                    `发现新版本 v${state.update.latestVersion ?? ''}，正在准备下载…`}
+                  {state.update.phase === 'downloading' &&
+                    `正在下载 v${state.update.latestVersion ?? ''}（${updateProgress?.progress ?? state.update.progress ?? 0}%）。`}
+                  {state.update.phase === 'ready' &&
+                    `v${state.update.latestVersion ?? ''} 已下载并通过 SHA-256 校验；重启后替换程序文件，配置和历史会保留。`}
+                  {state.update.phase === 'error' && '更新未完成。'}
+                </p>
+                {state.update.phase === 'downloading' && (
+                  <div className="update-progress">
+                    <span
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          updateProgress?.progress ?? state.update.progress ?? 0
+                        )}%`
+                      }}
+                    />
+                  </div>
+                )}
+                {state.update.phase === 'error' && (
+                  <p className="test-error">{state.update.message}</p>
+                )}
+                <div className="update-actions">
+                  <button
+                    className="ghost"
+                    disabled={['checking', 'downloading', 'ready'].includes(state.update.phase)}
+                    onClick={() => void window.zhujie.checkUpdates()}
+                  >
+                    {state.update.phase === 'checking' ? '检查中…' : '检查更新'}
+                  </button>
+                  {state.update.phase === 'error' && state.update.latestVersion && (
+                    <button className="primary" onClick={() => void downloadUpdate()}>
+                      重试下载
+                    </button>
+                  )}
+                  {state.update.phase === 'ready' && (
+                    <button
+                      className="primary"
+                      onClick={async () => {
+                        const result = await window.zhujie.installUpdate()
+                        if (!result.ok) flash(result.error ?? '更新失败')
+                      }}
+                    >
+                      重启并更新
+                    </button>
+                  )}
+                  <button className="link" onClick={() => void window.zhujie.openReleasePage()}>
+                    打开发布页
+                  </button>
                 </div>
               </div>
 
@@ -1834,6 +2088,58 @@ interface ProviderCardProps {
   onEdit: () => void
   onRemove: () => void
   onUseModel: (model: string) => void
+}
+
+function FavoriteCard({
+  favorite,
+  onDelete
+}: {
+  favorite: FavoriteRecord
+  onDelete: () => void
+}): JSX.Element {
+  const html = useMemo(
+    () => DOMPurify.sanitize(marked.parse(favorite.answer) as string),
+    [favorite.answer]
+  )
+  const [copied, setCopied] = useState(false)
+
+  const copy = async (): Promise<void> => {
+    await window.zhujie.writeClipboard(favorite.answer)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1400)
+  }
+
+  return (
+    <article className="favorite-card">
+      <div className="favorite-head">
+        <div className="favorite-meta">
+          <span className={favorite.mode === 'ask' ? 'history-mode ask' : 'history-mode'}>
+            {favorite.mode === 'ask' ? '提问' : '注解'}
+          </span>
+          <span className="muted">
+            {fmtTime(favorite.ts)} · {favorite.programName} · {favorite.model}
+          </span>
+        </div>
+        <div className="favorite-actions">
+          <button className="link" onClick={() => void copy()}>
+            {copied ? '已复制' : '复制回答'}
+          </button>
+          <button className="link danger" onClick={onDelete}>
+            删除
+          </button>
+        </div>
+      </div>
+      <div className="favorite-question">
+        <span>{favorite.question ? '你的问题' : '选中的文字'}</span>
+        <p>{favorite.question || favorite.text}</p>
+      </div>
+      <div className="favorite-answer markdown" dangerouslySetInnerHTML={{ __html: html }} />
+      <div className="favorite-foot">
+        {favorite.totalTokens.toLocaleString()} tokens · {formatCny(favorite.cost)}
+        {favorite.contextChars ? ` · 结合上下文 ${favorite.contextChars} 字` : ''}
+      </div>
+    </article>
+  )
 }
 
 function SummaryCard({ summary }: { summary: HistorySummary }): JSX.Element {

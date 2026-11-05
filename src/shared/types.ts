@@ -52,6 +52,30 @@ export interface AppState {
   version: string
   platform: string
   dataDir: string
+  update: UpdateStatus
+}
+
+export type UpdatePhase =
+  | 'idle'
+  | 'checking'
+  | 'latest'
+  | 'available'
+  | 'downloading'
+  | 'ready'
+  | 'error'
+
+export interface UpdateStatus {
+  phase: UpdatePhase
+  currentVersion: string
+  latestVersion?: string
+  progress?: number
+  message?: string
+  releaseUrl?: string
+}
+
+export interface UpdateProgress {
+  progress: number
+  message: string
 }
 
 export interface UsageRecord {
@@ -170,6 +194,29 @@ export interface HistorySummary {
   summary: string
   totalTokens: number
   cost: number
+}
+
+export interface FavoriteRecord {
+  id: string
+  turnId: string
+  ts: number
+  mode: PanelMode
+  programName: string
+  providerName: string
+  model: string
+  text: string
+  question?: string
+  answer: string
+  contextChars?: number
+  totalTokens: number
+  cost: number
+}
+
+export interface FavoriteToggleResult {
+  ok: boolean
+  favorited: boolean
+  id?: string
+  error?: string
 }
 
 export interface HistoryCompressResult {

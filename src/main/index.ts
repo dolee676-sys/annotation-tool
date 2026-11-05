@@ -1,10 +1,11 @@
-import { BrowserWindow, app, clipboard, ipcMain, screen } from 'electron'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { BrowserWindow, app, clipboard, ipcMain, screen, shell } from 'electron'
+import { mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import { chat, isLocalBaseUrl, listModels } from './ai'
 import { listInstalledApps } from './apps'
 import { compressHistory } from './compress'
 import { getSelectionContext } from './context'
+import { FavoriteStore } from './favorites'
 import { HISTORY_REWRITE_BATCH, HistoryStore } from './history'
 import { buildSystemPrompt, buildUserMessage, markSelection } from './prompt'
 import { estimateCostCny, usageMultiplier } from '../shared/pricing'
@@ -12,12 +13,15 @@ import { isFreeModel } from '../shared/presets'
 import { SelectionService, isUsablePoint, toDipPoint, type Point, type RawSelection } from './selection'
 import { isTrustedRendererUrl, rendererFileUrl } from './security'
 import { SettingsStore } from './settings'
+import { UpdateManager } from './updates'
 import { startMockServer } from './selftestMock'
 import { UsageStore } from './usage'
 import { WindowManager } from './windows'
 import type {
   AppEntry,
   AppState,
+  FavoriteRecord,
+  FavoriteToggleResult,
   HistoryCompressResult,
   PanelInit,
   PanelMode,
@@ -29,6 +33,7 @@ import type {
 import { HISTORY_KEEP_RECENT, HISTORY_LIMIT } from '../shared/types'
 
 const isSelftest = process.argv.includes('--selftest')
+const MAX_QUESTION_CHARS = 4000
 
 if (isSelftest) {
   const dir = join(app.getPath('temp'), 'zhujie-selftest')
@@ -45,8 +50,10 @@ app.setAppUserModelId('local.zhujie.app')
 let settings: SettingsStore
 let usage: UsageStore
 let history: HistoryStore
+let favorites: FavoriteStore
 let windows: WindowManager
 let selection: SelectionService | null = null
+let updater: UpdateManager
 let compressingHistory = false
 
 interface ActiveSelection {
@@ -58,8 +65,13 @@ interface ActiveSelection {
 }
 
 interface ConversationTurn {
+  id: string
   question?: string
   answer: string
+  providerName: string
+  model: string
+  totalTokens: number
+  cost: number
 }
 
 interface ActiveAnnotation {
@@ -179,10 +191,22 @@ function buildModelOptions(currentProviderId: string, currentModel: string): Pan
   return options
 }
 
+function debugSelection(data: Record<string, unknown>): void {
+  if (process.env.ZHUJIE_DEBUG_SELECTION !== '1') return
+  try {
+    appendFileSync(
+      join(app.getPath('userData'), 'selection-debug.log'),
+      `${JSON.stringify({ ts: Date.now(), ...data })}\n`,
+      'utf8'
+    )
+  } catch {
+    /* diagnostics only */
+  }
+}
+
 function handleSelection(raw: RawSelection): void {
   const s = settings.get()
   if (!s.enabled) return
-  if (BrowserWindow.getFocusedWindow()) return
 
   const rawText = (raw.text || '').trim()
   if (!rawText) {
@@ -191,6 +215,7 @@ function handleSelection(raw: RawSelection): void {
   }
 
   const programName = (raw.programName || '未知应用').trim() || '未知应用'
+  if (normalizeApp(programName) === normalizeApp(basename(process.execPath))) return
   const before = settings.get().detectedApps.length
   settings.touchApp(programName)
   if (settings.get().detectedApps.length !== before) broadcastState()
@@ -204,8 +229,8 @@ function handleSelection(raw: RawSelection): void {
   const text = truncated ? rawText.slice(0, s.maxChars) : rawText
 
   let source: Point | null = null
-  if (isUsablePoint(raw.endBottom)) source = raw.endBottom
-  else if (isUsablePoint(raw.mousePosEnd)) source = raw.mousePosEnd
+  if (isUsablePoint(raw.mousePosEnd)) source = raw.mousePosEnd
+  else if (isUsablePoint(raw.endBottom)) source = raw.endBottom
   else if (isUsablePoint(raw.startTop)) source = raw.startTop
 
   let anchor: Point
@@ -221,6 +246,16 @@ function handleSelection(raw: RawSelection): void {
 
   activeSelection = { text, programName, truncated, anchor, preferAbove }
   windows.showChip(anchor.x + 10, anchor.y + 8)
+  debugSelection({
+    phase: 'show',
+    programName,
+    posLevel: raw.posLevel,
+    mouseEnd: raw.mousePosEnd,
+    endBottom: raw.endBottom,
+    anchor,
+    workArea: display.workArea,
+    chip: windows.chipBounds()
+  })
 
   if (chipTimer) clearTimeout(chipTimer)
   chipTimer = setTimeout(() => {
@@ -309,11 +344,6 @@ async function runAnnotationRequest(
     })
     if (activeAnnotation !== a || runId !== a.runId) return
     a.pending = false
-    a.turns.push({
-      question: options.historyMode === 'ask' ? options.question : undefined,
-      answer: result.text
-    })
-    if (a.turns.length > 6) a.turns = a.turns.slice(-6)
     const latencyMs = Date.now() - startedAt
     const cost = estimateCostCny({
       model: a.model,
@@ -324,6 +354,16 @@ async function runAnnotationRequest(
       fallbackOut: provider.priceOut,
       preferFallback: !provider.builtin
     })
+    a.turns.push({
+      id: history.newId(),
+      question: options.historyMode === 'ask' ? options.question : undefined,
+      answer: result.text,
+      providerName: provider.name,
+      model: a.model,
+      totalTokens: result.totalTokens,
+      cost
+    })
+    if (a.turns.length > 6) a.turns = a.turns.slice(-6)
     const ts = Date.now()
     usage.add({
       id: usage.newId(),
@@ -433,7 +473,7 @@ async function startAnnotation(): Promise<void> {
 async function askPanelQuestion(question: string): Promise<boolean> {
   const a = activeAnnotation
   if (!a) return false
-  const q = question.trim()
+  const q = question.trim().slice(0, MAX_QUESTION_CHARS)
   if (!q || a.pending) return false
   const s = settings.get()
   a.lastQuestion = q
@@ -456,6 +496,44 @@ async function askPanelQuestion(question: string): Promise<boolean> {
     question: q
   })
   return true
+}
+
+function togglePanelFavorite(): FavoriteToggleResult {
+  const a = activeAnnotation
+  if (!a) return { ok: false, favorited: false, error: '没有打开的面板' }
+  if (a.pending) return { ok: false, favorited: false, error: '回答还没完成' }
+  const turn = a.turns[a.turns.length - 1]
+  if (!turn) return { ok: false, favorited: false, error: '还没有可收藏的回答' }
+
+  const existing = favorites.findByTurnId(turn.id)
+  if (existing) {
+    if (!favorites.remove(existing.id)) {
+      return { ok: false, favorited: true, id: existing.id, error: '收藏写入磁盘失败，请检查磁盘空间。' }
+    }
+    windows.settings?.webContents.send('favorites:changed')
+    return { ok: true, favorited: false, id: existing.id }
+  }
+
+  const item: FavoriteRecord = {
+    id: favorites.newId(),
+    turnId: turn.id,
+    ts: Date.now(),
+    mode: turn.question ? 'ask' : a.mode,
+    programName: a.programName,
+    providerName: turn.providerName,
+    model: turn.model,
+    text: a.text,
+    question: turn.question,
+    answer: turn.answer,
+    contextChars: a.context?.length ?? 0,
+    totalTokens: turn.totalTokens,
+    cost: turn.cost
+  }
+  if (!favorites.add(item)) {
+    return { ok: false, favorited: false, error: '收藏写入磁盘失败，请检查磁盘空间。' }
+  }
+  windows.settings?.webContents.send('favorites:changed')
+  return { ok: true, favorited: true, id: item.id }
 }
 
 function normalizeForMatch(value: string): string {
@@ -483,7 +561,7 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
   const selectedForContext = normalizeForMatch(sel.text)
   const contextApp = sel.programName || '未知应用'
   const lastContextFailure = contextFailures.get(contextApp)
-  const contextEligible = s.useContext && selectedForContext.length >= 4
+  const contextEligible = s.useContext && selectedForContext.length >= 1
   const shouldTryContext =
     contextEligible &&
     (!lastContextFailure || Date.now() - lastContextFailure > CONTEXT_RETRY_MS) &&
@@ -618,7 +696,8 @@ function state(): AppState {
     hookError: selection?.error,
     version: app.getVersion(),
     platform: process.platform,
-    dataDir: app.getPath('userData')
+    dataDir: app.getPath('userData'),
+    update: updater ? updater.getStatus() : { phase: 'idle', currentVersion: app.getVersion() }
   }
 }
 
@@ -626,14 +705,29 @@ function broadcastState(): void {
   windows.broadcast('state:changed', state())
 }
 
+function setEnabled(enabled: boolean): void {
+  settings.update({ enabled })
+  applySideEffects({ enabled })
+  broadcastState()
+}
+
 function applySideEffects(patch: SettingsPatch): void {
-  if (patch.enabled === false) hideChip()
+  if (patch.enabled === false) {
+    hideChip()
+    selection?.stop()
+  } else if (patch.enabled === true) {
+    selection?.start()
+  }
   if (typeof patch.launchAtLogin === 'boolean') {
     if (!app.isPackaged) {
       console.warn('[settings] 开发模式不注册开机启动，打包版才写入系统启动项')
       return
     }
-    app.setLoginItemSettings({ openAtLogin: patch.launchAtLogin, path: process.execPath })
+    app.setLoginItemSettings({
+      openAtLogin: patch.launchAtLogin,
+      path: process.execPath,
+      args: ['--hidden']
+    })
   }
 }
 
@@ -743,12 +837,44 @@ function registerIpc(): void {
   handle('history:list', () => history.list(HISTORY_LIMIT))
   handle('history:summaries', () => history.listSummaries())
   handle('history:delete', (_event, id: string) => {
-    history.remove(String(id))
+    if (!history.remove(String(id))) {
+      throw new Error('删除历史记录写入磁盘失败，请检查磁盘空间后重试。')
+    }
     return history.list(HISTORY_LIMIT)
   })
   handle('history:clear', () => {
-    history.clear()
+    if (!history.clear()) {
+      throw new Error('清空历史记录写入磁盘失败，请检查磁盘空间后重试。')
+    }
     return history.list(HISTORY_LIMIT)
+  })
+  handle('favorites:list', () => favorites.list())
+  handle('favorites:delete', (_event, id: string) => {
+    if (!favorites.remove(String(id))) {
+      throw new Error('删除收藏写入磁盘失败，请检查磁盘空间后重试。')
+    }
+    return favorites.list()
+  })
+  handle('favorites:clear', () => {
+    if (!favorites.clear()) {
+      throw new Error('清空收藏写入磁盘失败，请检查磁盘空间后重试。')
+    }
+    return favorites.list()
+  })
+  handle('hook:restart', () => {
+    selection?.restart()
+    broadcastState()
+    return state()
+  })
+  handle('updates:check', () => updater.check())
+  handle('updates:download', () => updater.download())
+  handle('updates:install', () => updater.install())
+  handle('updates:open', async () => {
+    const url =
+      updater.getStatus().releaseUrl ??
+      'https://github.com/dolee676-sys/annotation-tool/releases'
+    await shell.openExternal(url)
+    return true
   })
   handle('history:compress', async (): Promise<HistoryCompressResult> => {
     const kept = history.list(HISTORY_LIMIT).length
@@ -868,6 +994,7 @@ function registerIpc(): void {
   handle('panel:ask', async (_event, question: string) =>
     askPanelQuestion(String(question ?? ''))
   )
+  handle('panel:favorite', () => togglePanelFavorite())
 
   handle('panel:pin', (_event, pinned: boolean) => {
     if (activeAnnotation) activeAnnotation.pinned = Boolean(pinned)
@@ -899,18 +1026,32 @@ function startServices(): void {
   settings = new SettingsStore()
   usage = new UsageStore()
   history = new HistoryStore()
+  favorites = new FavoriteStore()
   if (app.isPackaged && settings.get().launchAtLogin) {
-    app.setLoginItemSettings({ openAtLogin: true, path: process.execPath })
+    app.setLoginItemSettings({
+      openAtLogin: true,
+      path: process.execPath,
+      args: ['--hidden']
+    })
   }
   windows = new WindowManager(
-    (enabled) => {
-      settings.update({ enabled })
-      broadcastState()
-    },
+    (enabled) => setEnabled(enabled),
     () => settings.get().enabled
   )
   windows.createChip()
   windows.createTray()
+  updater = new UpdateManager({
+    currentVersion: app.getVersion(),
+    onStatus: () => broadcastState(),
+    onProgress: (progress, message) =>
+      windows.settings?.webContents.send('update:progress', { progress, message }),
+    onBeforeInstall: () => {
+      windows.markQuitting()
+      setTimeout(() => app.quit(), 700)
+    }
+  })
+  const applyResult = updater.readApplyResult()
+  if (applyResult) updater.reportApplyResult(applyResult)
 
   selection = new SelectionService({
     onSelection: handleSelection,
@@ -955,12 +1096,15 @@ function startServices(): void {
     onWheel: () => hideChip(),
     onEscape: () => {
       hideChip()
+      // 面板聚焦时交给渲染层处理，避免打断输入法的候选词取消
+      const panel = windows.panel
+      if (panel && !panel.isDestroyed() && panel.isFocused()) return
       activeAnnotation?.controller?.abort()
       windows.closePanel()
     },
     onStatus: () => broadcastState()
   })
-  selection.start()
+  if (settings.get().enabled) selection.start()
 
   registerIpc()
 }
@@ -985,8 +1129,12 @@ app.whenReady().then(() => {
   if (isSelftest) {
     void runSelfTest()
   } else {
-    windows.openSettings()
+    const silentStart = process.argv.includes('--hidden')
+    if (!silentStart) windows.openSettings()
     setTimeout(() => void refreshLocalModels(), 800)
+    if (updater.getStatus().phase !== 'error') {
+      setTimeout(() => void updater.check(), 6000)
+    }
   }
 })
 
@@ -1111,8 +1259,8 @@ async function runSelfTest(): Promise<void> {
     if (JSON.stringify(chipApi) !== JSON.stringify(['chipClick', 'onAppear'])) {
       throw new Error('小框 preload 权限不符合预期')
     }
-    chip.webContents.sendInputEvent({ type: 'mouseDown', x: 44, y: 17, button: 'left', clickCount: 1 })
-    chip.webContents.sendInputEvent({ type: 'mouseUp', x: 44, y: 17, button: 'left', clickCount: 1 })
+    chip.webContents.sendInputEvent({ type: 'mouseDown', x: 29, y: 22, button: 'left', clickCount: 1 })
+    chip.webContents.sendInputEvent({ type: 'mouseUp', x: 29, y: 22, button: 'left', clickCount: 1 })
     await firstDone
     await new Promise((r) => setTimeout(r, 400))
     await captureWindow(windows.panel, join(outDir, 'panel.png'))
@@ -1139,8 +1287,8 @@ async function runSelfTest(): Promise<void> {
     const askChip = windows.chip
     if (!askChip) throw new Error('提问小框未创建')
     const askDone = waitForPanelDone()
-    askChip.webContents.sendInputEvent({ type: 'mouseDown', x: 44, y: 55, button: 'left', clickCount: 1 })
-    askChip.webContents.sendInputEvent({ type: 'mouseUp', x: 44, y: 55, button: 'left', clickCount: 1 })
+    askChip.webContents.sendInputEvent({ type: 'mouseDown', x: 83, y: 22, button: 'left', clickCount: 1 })
+    askChip.webContents.sendInputEvent({ type: 'mouseUp', x: 83, y: 22, button: 'left', clickCount: 1 })
     await new Promise((r) => setTimeout(r, 700))
     await captureWindow(windows.panel, join(outDir, 'panel-ask.png'))
     void askPanelQuestion('这段文字里的注意力权重是什么意思？')
@@ -1153,6 +1301,21 @@ async function runSelfTest(): Promise<void> {
       throw new Error('多轮追问记忆不符合预期')
     }
     console.log('SELFTEST_TURNS', JSON.stringify({ turns: activeAnnotation.turns.length }))
+    const favoriteClicked = await windows.panel?.webContents.executeJavaScript(
+      "document.querySelector('.icon-btn.star')?.click(); true"
+    )
+    await new Promise((r) => setTimeout(r, 300))
+    if (!favoriteClicked || favorites.list().length !== 1) {
+      throw new Error('收藏按钮或收藏存储不符合预期')
+    }
+    const favorite = favorites.list()[0]
+    if (!favorite.question?.includes('再展开第二点')) {
+      throw new Error('收藏内容不是当前问题')
+    }
+    console.log(
+      'SELFTEST_FAVORITE',
+      JSON.stringify({ count: favorites.list().length, question: favorite.question })
+    )
     await captureWindow(windows.panel, join(outDir, 'panel-ask-answer.png'))
     const panelContents = windows.panel?.webContents
     if (panelContents) {
@@ -1256,8 +1419,11 @@ async function runSelfTest(): Promise<void> {
     await clickNav(3)
     await captureWindow(windows.settings, join(outDir, 'history.png'))
     await clickNav(4)
-    await captureWindow(windows.settings, join(outDir, 'usage.png'))
+    await new Promise((r) => setTimeout(r, 500))
+    await captureWindow(windows.settings, join(outDir, 'favorites.png'))
     await clickNav(5)
+    await captureWindow(windows.settings, join(outDir, 'usage.png'))
+    await clickNav(6)
     await captureWindow(windows.settings, join(outDir, 'about.png'))
 
     const ollamaProvider = {
@@ -1346,6 +1512,14 @@ async function runSelfTest(): Promise<void> {
     if (compressResult.compressed !== HISTORY_LIMIT - HISTORY_KEEP_RECENT) {
       throw new Error('历史压缩条数不符合预期')
     }
+    console.log(
+      'SELFTEST_HISTORY_AFTER_COMPRESS',
+      JSON.stringify({
+        count: history.list().length,
+        keep: HISTORY_KEEP_RECENT,
+        compressed: compressResult.compressed
+      })
+    )
     if (history.list().length !== HISTORY_KEEP_RECENT) throw new Error('历史压缩后保留条数不符合预期')
     if (compressedSummaries.length !== 1) throw new Error('历史压缩摘要未保存')
     if (compressedSummaries[0].sourceCount !== HISTORY_LIMIT - HISTORY_KEEP_RECENT) {
@@ -1390,8 +1564,8 @@ async function runSelfTest(): Promise<void> {
     const truncChip = windows.chip
     if (!truncChip) throw new Error('截断测试小框未创建')
     const truncDone = waitForPanelDone()
-    truncChip.webContents.sendInputEvent({ type: 'mouseDown', x: 44, y: 17, button: 'left', clickCount: 1 })
-    truncChip.webContents.sendInputEvent({ type: 'mouseUp', x: 44, y: 17, button: 'left', clickCount: 1 })
+    truncChip.webContents.sendInputEvent({ type: 'mouseDown', x: 29, y: 22, button: 'left', clickCount: 1 })
+    truncChip.webContents.sendInputEvent({ type: 'mouseUp', x: 29, y: 22, button: 'left', clickCount: 1 })
     await truncDone
     await new Promise((r) => setTimeout(r, 350))
     const truncWarn = await windows.panel?.webContents.executeJavaScript(
@@ -1425,6 +1599,9 @@ async function runSelfTest(): Promise<void> {
             summaries: compressedSummaries.length,
             compressed: compressResult.compressed,
             costCheck
+          },
+          favorites: {
+            count: favorites.list().length
           },
           context: contextProbeResult
         },

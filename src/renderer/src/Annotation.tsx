@@ -20,24 +20,26 @@ export function Chip(): JSX.Element {
 
   return (
     <div className="chip-host" key={appearId}>
-      <button
-        className="chip"
-        title="AI 注解这段文字"
-        disabled={Boolean(busy)}
-        onClick={() => trigger('annotate')}
-      >
-        <span className="chip-spark" aria-hidden="true" />
-        <span>{busy === 'annotate' ? '读取中' : '注解'}</span>
-      </button>
-      <button
-        className="chip ask"
-        title="就这段文字向 AI 提问"
-        disabled={Boolean(busy)}
-        onClick={() => trigger('ask')}
-      >
-        <span className="chip-spark ask" aria-hidden="true" />
-        <span>{busy === 'ask' ? '读取中' : '提问'}</span>
-      </button>
+      <div className={busy ? 'chip-shell busy' : 'chip-shell'}>
+        <button
+          className="chip-half left"
+          title="AI 注解这段文字"
+          aria-label="注解"
+          disabled={Boolean(busy)}
+          onClick={() => trigger('annotate')}
+        >
+          注
+        </button>
+        <button
+          className="chip-half right"
+          title="就这段文字向 AI 提问"
+          aria-label="提问"
+          disabled={Boolean(busy)}
+          onClick={() => trigger('ask')}
+        >
+          问
+        </button>
+      </div>
     </div>
   )
 }
@@ -92,8 +94,12 @@ export function Panel(): JSX.Element {
   const [followUps, setFollowUps] = useState<FollowUp[]>([])
   const [question, setQuestion] = useState('')
   const [pinnedOpen, setPinnedOpen] = useState(false)
+  const [favorited, setFavorited] = useState(false)
+  const [favoriteBusy, setFavoriteBusy] = useState(false)
+  const [favoriteError, setFavoriteError] = useState('')
   const [copied, setCopied] = useState(false)
   const answerRef = useRef<HTMLDivElement>(null)
+  const composing = useRef(false)
   const stickToBottom = useRef(true)
   const readySent = useRef(false)
   const target = useRef<'initial' | 'followup'>('initial')
@@ -111,6 +117,8 @@ export function Panel(): JSX.Element {
       setFollowUps([])
       setQuestion('')
       setPinnedOpen(false)
+      setFavorited(false)
+      setFavoriteError('')
       target.current = 'initial'
       stickToBottom.current = true
     })
@@ -118,6 +126,8 @@ export function Panel(): JSX.Element {
       setMode(payload.mode)
       setModel(payload.model)
       setInitialError('')
+      setFavorited(false)
+      setFavoriteError('')
       if (payload.followUp) {
         target.current = 'followup'
         setFollowUps((prev) => [
@@ -200,7 +210,9 @@ export function Panel(): JSX.Element {
     }
 
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') void window.zhujie.panelClose()
+      if (event.key === 'Escape' && !event.isComposing && event.keyCode !== 229) {
+        void window.zhujie.panelClose()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => {
@@ -246,7 +258,8 @@ export function Panel(): JSX.Element {
     return Array.from(map.values())
   }, [init])
 
-  const current = init?.options.find((o) => o.model === model) ?? null
+  const current =
+    init?.options.find((o) => o.providerId === init.providerId && o.model === model) ?? null
   const selectedValue = current ? `${current.providerId}::${current.model}` : ''
 
   const busy =
@@ -258,6 +271,22 @@ export function Panel(): JSX.Element {
     !busy &&
     !contextPending &&
     (mode === 'ask' || initialStatus === 'done' || initialStatus === 'error')
+  const lastFollowUp = followUps[followUps.length - 1]
+  const canFavorite =
+    !busy && (lastFollowUp ? lastFollowUp.status === 'done' : initialStatus === 'done')
+
+  const toggleFavorite = async (): Promise<void> => {
+    if (!canFavorite || favoriteBusy) return
+    setFavoriteBusy(true)
+    setFavoriteError('')
+    try {
+      const result = await window.zhujie.panelFavorite()
+      if (result.ok) setFavorited(result.favorited)
+      else setFavoriteError(result.error ?? '收藏失败')
+    } finally {
+      setFavoriteBusy(false)
+    }
+  }
   const latestMeta = followUps.length ? followUps[followUps.length - 1].meta : initialMeta
   const latestStatus = followUps.length ? followUps[followUps.length - 1].status : initialStatus
 
@@ -275,6 +304,7 @@ export function Panel(): JSX.Element {
   }
 
   const submitAsk = (): void => {
+    if (composing.current) return
     const text = question.trim()
     if (!text || !canAsk) return
     setQuestion('')
@@ -359,6 +389,22 @@ export function Panel(): JSX.Element {
             ))}
           </select>
           <button
+            className={favorited ? 'icon-btn star active' : 'icon-btn star'}
+            title={favorited ? '取消收藏' : '收藏当前问答'}
+            disabled={!canFavorite || favoriteBusy}
+            onClick={() => void toggleFavorite()}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill={favorited ? 'currentColor' : 'none'}
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinejoin="round"
+            >
+              <path d="M12 3.2l2.7 5.5 6 .9-4.3 4.2 1 6-5.4-2.8-5.4 2.8 1-6-4.3-4.2 6-.9L12 3.2z" />
+            </svg>
+          </button>
+          <button
             className={pinnedOpen ? 'icon-btn pin active' : 'icon-btn pin'}
             title={pinnedOpen ? '取消钉住，点外部可关闭' : '钉在当前屏幕上'}
             onClick={togglePin}
@@ -380,13 +426,27 @@ export function Panel(): JSX.Element {
             disabled={mode === 'ask' || busy}
             onClick={() => void window.zhujie.panelRegenerate()}
           >
-            ↻
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 11a8 8 0 1 0-2.4 5.7" />
+              <path d="M20 4v7h-7" />
+            </svg>
           </button>
           <button className="icon-btn" title={copied ? '已复制' : '复制内容'} onClick={() => void copy()}>
-            {copied ? '✓' : '⧉'}
+            {copied ? (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12.5l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="10" height="10" rx="2" />
+                <path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
+              </svg>
+            )}
           </button>
           <button className="icon-btn close" title="关闭" onClick={() => void window.zhujie.panelClose()}>
-            ×
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
           </button>
         </div>
       </header>
@@ -505,7 +565,19 @@ export function Panel(): JSX.Element {
         <input
           value={question}
           placeholder={placeholder}
+          maxLength={4000}
           onChange={(event) => setQuestion(event.target.value)}
+          onCompositionStart={() => {
+            composing.current = true
+          }}
+          onCompositionEnd={() => {
+            composing.current = false
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && (event.nativeEvent.isComposing || event.keyCode === 229)) {
+              event.preventDefault()
+            }
+          }}
           disabled={!canAsk}
         />
         <button type="submit" disabled={!question.trim() || !canAsk}>
@@ -524,6 +596,7 @@ export function Panel(): JSX.Element {
           </span>
         )}
         <span className="foot-spacer" />
+        {favoriteError && <span className="quote-warn">{favoriteError}</span>}
         {init && init.contextChars > 0 && <span className="context-badge">结合上下文</span>}
         {pinnedOpen && <span className="pin-badge">已钉住</span>}
         {init?.localOnly && <span className="local-badge">仅本机</span>}

@@ -17,6 +17,7 @@ const api = {
   panelClose: () => ipcRenderer.invoke('panel:close'),
   panelRegenerate: () => ipcRenderer.invoke('panel:regenerate'),
   panelAsk: (question: string) => ipcRenderer.invoke('panel:ask', question),
+  panelFavorite: () => ipcRenderer.invoke('panel:favorite'),
   panelSetPinned: (pinned: boolean) => ipcRenderer.invoke('panel:pin', pinned),
   panelSwitchModel: (payload: { providerId: string; model: string }) =>
     ipcRenderer.invoke('panel:switch-model', payload),

@@ -4,7 +4,9 @@ const EVENT_CHANNELS = [
   'state:changed',
   'usage:changed',
   'history:changed',
-  'history:compress-progress'
+  'history:compress-progress',
+  'favorites:changed',
+  'update:progress'
 ] as const
 
 type EventChannel = (typeof EVENT_CHANNELS)[number]
@@ -23,6 +25,14 @@ const api = {
   compressHistory: () => ipcRenderer.invoke('history:compress'),
   deleteHistory: (id: string) => ipcRenderer.invoke('history:delete', id),
   clearHistory: () => ipcRenderer.invoke('history:clear'),
+  listFavorites: () => ipcRenderer.invoke('favorites:list'),
+  deleteFavorite: (id: string) => ipcRenderer.invoke('favorites:delete', id),
+  clearFavorites: () => ipcRenderer.invoke('favorites:clear'),
+  checkUpdates: () => ipcRenderer.invoke('updates:check'),
+  downloadUpdate: () => ipcRenderer.invoke('updates:download'),
+  installUpdate: () => ipcRenderer.invoke('updates:install'),
+  openReleasePage: () => ipcRenderer.invoke('updates:open'),
+  restartHook: () => ipcRenderer.invoke('hook:restart'),
   writeClipboard: (text: string) => ipcRenderer.invoke('clipboard:write', text),
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   hideWindow: () => ipcRenderer.invoke('window:hide'),

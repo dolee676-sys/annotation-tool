@@ -6,6 +6,9 @@ import { isTrustedRendererUrl, rendererFileUrl } from './security'
 const preloadPath = (name: 'index' | 'panel' | 'chip'): string =>
   join(__dirname, '../preload', `${name}.js`)
 
+const CHIP_WIDTH = 112
+const CHIP_HEIGHT = 44
+
 const rendererIndex = (): string => join(__dirname, '../renderer/index.html')
 
 function isTrustedUrl(url: string): boolean {
@@ -88,8 +91,8 @@ export class WindowManager {
   createChip(): void {
     if (this.chip && !this.chip.isDestroyed()) return
     this.chip = new BrowserWindow({
-      width: 88,
-      height: 74,
+      width: CHIP_WIDTH,
+      height: CHIP_HEIGHT,
       show: false,
       frame: false,
       transparent: true,
@@ -126,13 +129,14 @@ export class WindowManager {
     if (!chip) return
     const display = screen.getDisplayNearestPoint({ x, y })
     const area = display.workArea
-    const width = 88
-    const height = 74
+    const width = CHIP_WIDTH
+    const height = CHIP_HEIGHT
     const left = Math.min(Math.max(x, area.x + 4), area.x + area.width - width - 4)
     const top = Math.min(Math.max(y, area.y + 4), area.y + area.height - height - 4)
     chip.setBounds({ x: Math.round(left), y: Math.round(top), width, height })
-    chip.showInactive()
     chip.setAlwaysOnTop(true, 'screen-saver')
+    chip.showInactive()
+    chip.moveTop()
     chip.webContents.send('chip:appear')
   }
 

@@ -87,7 +87,6 @@ export function usageMultiplier(options: {
 export function formatUsageMultiplier(value: number | null): string {
   if (value === null) return '—'
   if (value === 0) return '免费'
-  if (value < 0.1) return '<0.1×'
-  if (value < 10) return `${Number(value.toFixed(1))}×`
-  return `${Math.round(value)}×`
+  if (value < 0.01) return '<0.01×'
+  return `${value.toFixed(2)}×`
 }

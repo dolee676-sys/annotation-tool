@@ -319,6 +319,7 @@ export class SettingsStore {
     if (!clean) return null
     const now = Date.now()
     const existing = this.data.detectedApps.find((a) => a.name === clean)
+    const shouldSave = !existing || now - existing.lastSeen >= 60_000
     if (existing) {
       existing.lastSeen = now
       existing.count += 1
@@ -327,7 +328,7 @@ export class SettingsStore {
     }
     this.data.detectedApps.sort((a, b) => b.lastSeen - a.lastSeen)
     this.data.detectedApps = this.data.detectedApps.slice(0, 40)
-    this.scheduleSave()
+    if (shouldSave) this.scheduleSave()
     return existing ?? this.data.detectedApps[0]
   }
 }

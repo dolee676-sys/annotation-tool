@@ -136,8 +136,13 @@ export async function compressHistory(options: CompressHistoryOptions): Promise<
     cost
   }
 
-  history.addSummary(summary)
-  history.removeMany(new Set(compressible.map((record) => record.id)))
+  const committed = history.commitCompression(
+    summary,
+    new Set(compressible.map((record) => record.id))
+  )
+  if (!committed) {
+    throw new Error('摘要或历史记录写入磁盘失败，旧记录已保留。请检查磁盘空间后重试。')
+  }
   usage.add({
     id: usage.newId(),
     ts: summary.ts,

@@ -5,6 +5,7 @@ import { isTrustedRendererUrl } from '../src/main/security.ts'
 import { summarizeUsage } from '../src/main/usageSummary.ts'
 import { isFreeModel } from '../src/shared/presets.ts'
 import { estimateCostCny, formatCny, formatUsageMultiplier, priceForModel, usageMultiplier } from '../src/shared/pricing.ts'
+import { isNewerVersion } from '../src/shared/version.ts'
 import type { UsageRecord } from '../src/shared/types.ts'
 
 test('按模型价目估算费用，本机模型为 0', () => {
@@ -55,9 +56,11 @@ test('消耗倍率以 deepseek-chat 为 1×，并覆盖本机/免费/自定义�
   )
   assert.equal(usageMultiplier({ model: 'custom-model' }), null)
   assert.equal(formatUsageMultiplier(0), '免费')
-  assert.equal(formatUsageMultiplier(1), '1×')
-  assert.equal(formatUsageMultiplier(0.09), '<0.1×')
-  assert.equal(formatUsageMultiplier(12.4), '12×')
+  assert.equal(formatUsageMultiplier(1), '1.00×')
+  assert.equal(formatUsageMultiplier(1.04), '1.04×')
+  assert.equal(formatUsageMultiplier(0.09), '0.09×')
+  assert.equal(formatUsageMultiplier(0.001), '<0.01×')
+  assert.equal(formatUsageMultiplier(12.4), '12.40×')
   assert.equal(formatUsageMultiplier(null), '—')
 })
 
@@ -116,8 +119,15 @@ test('只允许本地应用页面导航与发送 IPC', () => {
   )
 })
 
-test('旧用量记录缺少 latencyMs 时平均耗时不会变成 NaN', () => {
-  const base: UsageRecord = {
+test('更新版本比较支持 v 前缀和多段数字', () => {
+  assert.equal(isNewerVersion('v0.1.3', '0.1.2'), true)
+  assert.equal(isNewerVersion('1.0.0', '0.9.9'), true)
+  assert.equal(isNewerVersion('0.1.2', 'v0.1.2'), false)
+  assert.equal(isNewerVersion('0.2.0', '0.10.0'), false)
+  assert.equal(isNewerVersion('v1.2.0', '1.1.9'), true)
+})
+
+test('旧用量记录缺少 latencyMs 时平均耗时不会变成 NaN', () => {  const base: UsageRecord = {
     id: 'x',
     ts: new Date('2026-11-05T10:00:00').getTime(),
     programName: '测试应用',
