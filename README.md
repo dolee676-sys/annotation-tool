@@ -195,7 +195,7 @@ powershell -ExecutionPolicy Bypass -File scripts/install-shortcut.ps1
 # powershell -ExecutionPolicy Bypass -File scripts/install-shortcut.ps1 -InstallDir 'D:\Apps\zhujie'
 ```
 
-`signAndEditExecutable=false` 是为了绕开本机 Windows 无法创建符号链接、导致签名工具解压失败的问题。打包版未做代码签名，首次运行可能触发 SmartScreen。
+`signAndEditExecutable=false` 是为了绕开本机 Windows 无法创建符号链接、导致签名工具解压失败的问题。安装脚本会先调用 `scripts/patch-exe.ps1`，把 `build/icon.ico` 和版本信息写入 exe，再复制到安装目录；如果只打包不安装，需要手动运行一次 `scripts/patch-exe.ps1`。
 
 ### 项目结构
 

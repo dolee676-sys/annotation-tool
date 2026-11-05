@@ -10,6 +10,11 @@ if (-not (Test-Path $exe)) {
   throw "找不到 $exe，请先运行: npm run build 和 electron-builder --win --dir --x64"
 }
 
+$patchScript = Join-Path $PSScriptRoot 'patch-exe.ps1'
+if (Test-Path $patchScript) {
+  & $patchScript -ExePath $exe -IconPath (Join-Path $PSScriptRoot '..\build\icon.ico')
+}
+
 Get-Process | Where-Object { $_.Path -like "$InstallDir\*.exe" } | Stop-Process -Force -ErrorAction SilentlyContinue
 for ($i = 0; $i -lt 20; $i++) {
   $left = @(Get-Process | Where-Object { $_.Path -like "$InstallDir\*.exe" } -ErrorAction SilentlyContinue)
