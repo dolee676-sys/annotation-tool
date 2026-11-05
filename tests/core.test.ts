@@ -115,8 +115,9 @@ test('上下文注解把选中文字放在文章片段之前，避免模型转�
   assert.ok(message.indexOf('【必须先解释的选中文字】') < message.indexOf('【文章片段'))
   assert.match(message, /"""init\(\)"""/)
   assert.match(message, /选中的是一个词或短语/)
-  assert.match(message, /1\. 它在当前语境中是什么意思/)
-  assert.match(message, /2\. 它在当前语境中起什么作用/)
+  assert.match(message, /\*\*词义\*\*/)
+  assert.match(message, /\*\*在当前语境\*\*/)
+  assert.match(message, /\*\*作用\*\*/)
   assert.match(message, /不要把整行\/整段代码当成选中内容/)
 })
 
