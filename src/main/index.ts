@@ -62,6 +62,7 @@ interface ActiveSelection {
   programName: string
   truncated: boolean
   anchor: Point
+  contextPoint: Point
   preferAbove: boolean
 }
 
@@ -126,8 +127,6 @@ let pendingPanelInit: PanelInit | null = null
 let chipTimer: NodeJS.Timeout | null = null
 let chipShowId = 0
 let selftestResolve: (() => void) | null = null
-const contextFailures = new Map<string, number>()
-const CONTEXT_RETRY_MS = 2 * 60 * 1000
 
 function normalizeApp(name: string): string {
   return name.trim().toLowerCase().replace(/\.exe$/, '')
@@ -193,6 +192,21 @@ function buildModelOptions(currentProviderId: string, currentModel: string): Pan
   return options
 }
 
+function toScreenPoint(point: Point): Point {
+  if (process.platform !== 'win32') return point
+  const anyScreen = screen as unknown as {
+    dipToScreenPoint?: (p: Point) => Point
+  }
+  if (typeof anyScreen.dipToScreenPoint === 'function') {
+    try {
+      return anyScreen.dipToScreenPoint(point)
+    } catch {
+      /* use DIP point as-is */
+    }
+  }
+  return point
+}
+
 function debugSelection(data: Record<string, unknown>): void {
   if (process.env.ZHUJIE_DEBUG_SELECTION !== '1') return
   try {
@@ -243,10 +257,17 @@ function handleSelection(raw: RawSelection): void {
     anchor = cursor
   }
 
+  // 读上下文时用选区起点命中源应用，避免小框在屏幕边缘被夹住后盖住终点。
+  let contextSource: Point | null = null
+  if (isUsablePoint(raw.startTop)) contextSource = raw.startTop
+  else if (isUsablePoint(raw.startBottom)) contextSource = raw.startBottom
+  else if (source) contextSource = source
+  const contextPoint = contextSource ? toDipPoint(contextSource) : anchor
+
   const display = screen.getDisplayNearestPoint(anchor)
   const preferAbove = anchor.y > display.workArea.y + display.workArea.height - 220
 
-  activeSelection = { text, programName, truncated, anchor, preferAbove }
+  activeSelection = { text, programName, truncated, anchor, contextPoint, preferAbove }
   chipShowId += 1
   windows.showChip(anchor.x + 10, anchor.y + 8)
   debugSelection({
@@ -562,17 +583,15 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
   }
 
   const selectedForContext = normalizeForMatch(sel.text)
-  const contextApp = sel.programName || '未知应用'
-  const lastContextFailure = contextFailures.get(contextApp)
   const contextEligible = s.useContext && selectedForContext.length >= 1
-  const shouldTryContext =
-    contextEligible &&
-    (!lastContextFailure || Date.now() - lastContextFailure > CONTEXT_RETRY_MS) &&
-    !BrowserWindow.getFocusedWindow()
+  // 不再缓存失败：之前一次失败会压制 2 分钟内所有尝试，导致看起来“总是读不到”。
+  const shouldTryContext = contextEligible
 
   // 先启动 PowerShell 抓上下文，同时把面板显示出来；面板用 showInactive 出现，
   // 不会抢走源应用焦点，因此 UIA 仍能读取原来的选区。
-  const contextPromise = shouldTryContext ? getSelectionContext(s.contextChars) : null
+  const contextPromise = shouldTryContext
+    ? getSelectionContext(s.contextChars, sel.text, toScreenPoint(sel.contextPoint))
+    : null
   activeAnnotation?.controller?.abort()
 
   const annotation: ActiveAnnotation = {
@@ -626,7 +645,8 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
 
   const result = await contextPromise.catch((error) => ({
     ok: false as const,
-    error: error instanceof Error ? error.message : String(error)
+    error: error instanceof Error ? error.message : String(error),
+    method: undefined
   }))
   if (activeAnnotation !== annotation) return
 
@@ -637,19 +657,17 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
     const matches = got
       ? got.includes(selectedForContext) || selectedForContext.includes(got)
       : selectedForContext.length >= 6 && whole.includes(selectedForContext)
-    if (matches) {
-      context = result.text
-      contextFailures.delete(contextApp)
-    } else {
-      contextFailures.set(contextApp, Date.now())
-    }
-  } else {
-    contextFailures.set(contextApp, Date.now())
+    if (matches) context = result.text
   }
   if (isSelftest) {
     console.log(
       '[selftest] context result',
-      JSON.stringify({ ok: result.ok, chars: context?.length ?? 0, error: result.error })
+      JSON.stringify({
+        ok: result.ok,
+        chars: context?.length ?? 0,
+        method: result.method,
+        error: result.error
+      })
     )
   }
 
