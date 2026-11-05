@@ -82,6 +82,8 @@ export interface UpdateManagerOptions {
   onStatus: (status: UpdateStatus) => void
   onProgress: (progress: number, message: string) => void
   onBeforeInstall: () => void
+  shouldAutoDownload: () => boolean
+  onAvailable: (latest: string, releaseUrl: string) => void
 }
 
 export class UpdateManager {
@@ -89,6 +91,8 @@ export class UpdateManager {
   private readonly onStatus: (status: UpdateStatus) => void
   private readonly onProgress: (progress: number, message: string) => void
   private readonly onBeforeInstall: () => void
+  private readonly shouldAutoDownload: () => boolean
+  private readonly onAvailable: (latest: string, releaseUrl: string) => void
   private status: UpdateStatus
   private busy = false
   private downloading = false
@@ -98,6 +102,8 @@ export class UpdateManager {
     this.onStatus = options.onStatus
     this.onProgress = options.onProgress
     this.onBeforeInstall = options.onBeforeInstall
+    this.shouldAutoDownload = options.shouldAutoDownload
+    this.onAvailable = options.onAvailable
     this.status = { phase: 'idle', currentVersion: this.currentVersion }
   }
 
@@ -134,11 +140,17 @@ export class UpdateManager {
         currentVersion: this.currentVersion,
         latestVersion: latest,
         releaseUrl,
-        message: `发现新版本 v${latest}，开始下载`
+        message: `发现新版本 v${latest}`
       })
-      // 用户明确要求「检测到更新就自动更新」：这里自动下载并校验，
-      // 但安装仍由用户点「重启并更新」触发，避免应用在运行中被替换。
-      await this.downloadRelease(latest, releaseUrl)
+      if (this.shouldAutoDownload()) {
+        await this.downloadRelease(latest, releaseUrl)
+      } else {
+        try {
+          this.onAvailable(latest, releaseUrl)
+        } catch {
+          /* 提示失败不影响状态，用户仍可在设置里下载 */
+        }
+      }
       return this.status
     } catch (error) {
       rmSync(this.updateDir(), { recursive: true, force: true })

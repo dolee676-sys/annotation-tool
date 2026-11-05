@@ -39,6 +39,7 @@ export interface StoredSettings {
   useContext: boolean
   contextChars: number
   historyEnabled: boolean
+  autoDownloadUpdates: boolean
   providers: StoredProvider[]
 }
 
@@ -85,6 +86,7 @@ function defaults(): StoredSettings {
     useContext: true,
     contextChars: 300,
     historyEnabled: true,
+    autoDownloadUpdates: false,
     providers: defaultProviders()
   }
 }
@@ -240,6 +242,9 @@ export class SettingsStore {
     if (typeof patch.launchAtLogin === 'boolean') next.launchAtLogin = patch.launchAtLogin
     if (typeof patch.useContext === 'boolean') next.useContext = patch.useContext
     if (typeof patch.historyEnabled === 'boolean') next.historyEnabled = patch.historyEnabled
+    if (typeof patch.autoDownloadUpdates === 'boolean') {
+      next.autoDownloadUpdates = patch.autoDownloadUpdates
+    }
     if (typeof patch.contextChars === 'number') {
       next.contextChars = Math.min(1000, Math.max(100, Math.round(patch.contextChars)))
     }

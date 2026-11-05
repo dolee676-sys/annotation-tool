@@ -1,4 +1,4 @@
-import { BrowserWindow, app, clipboard, ipcMain, screen, shell } from 'electron'
+import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, screen, shell } from 'electron'
 import { mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { chat, isLocalBaseUrl, listModels } from './ai'
@@ -55,6 +55,7 @@ let windows: WindowManager
 let selection: SelectionService | null = null
 let updater: UpdateManager
 let compressingHistory = false
+const promptedUpdates = new Set<string>()
 
 interface ActiveSelection {
   text: string
@@ -705,6 +706,38 @@ function broadcastState(): void {
   windows.broadcast('state:changed', state())
 }
 
+function promptUpdateDownload(latest: string): void {
+  if (promptedUpdates.has(latest)) return
+  promptedUpdates.add(latest)
+  const settingsWindow = windows.settings
+  const visible = Boolean(settingsWindow && !settingsWindow.isDestroyed() && settingsWindow.isVisible())
+  if (!visible) {
+    if (Notification.isSupported()) {
+      const note = new Notification({
+        title: `注解 v${latest} 可用`,
+        body: '点此打开设置，下载并安装更新。'
+      })
+      note.on('click', () => windows.openSettings())
+      note.show()
+    }
+    return
+  }
+
+  const options: Electron.MessageBoxOptions = {
+    type: 'info',
+    title: '发现新版本',
+    message: `发现新版本 v${latest}`,
+    detail: '是否现在下载？下载完成后需要重启安装，配置和历史会保留。',
+    buttons: ['下载更新', '稍后'],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true
+  }
+  void dialog.showMessageBox(settingsWindow!, options).then((result) => {
+    if (result.response === 0) void updater.download()
+  })
+}
+
 function setEnabled(enabled: boolean): void {
   settings.update({ enabled })
   applySideEffects({ enabled })
@@ -1048,7 +1081,9 @@ function startServices(): void {
     onBeforeInstall: () => {
       windows.markQuitting()
       setTimeout(() => app.quit(), 700)
-    }
+    },
+    shouldAutoDownload: () => settings.get().autoDownloadUpdates,
+    onAvailable: (latest) => promptUpdateDownload(latest)
   })
   const applyResult = updater.readApplyResult()
   if (applyResult) updater.reportApplyResult(applyResult)

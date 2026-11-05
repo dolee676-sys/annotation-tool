@@ -1950,7 +1950,9 @@ export function App(): JSX.Element {
                   {state.update.phase === 'latest' &&
                     `已是最新版本${state.update.latestVersion ? ` v${state.update.latestVersion}` : ''}。`}
                   {state.update.phase === 'available' &&
-                    `发现新版本 v${state.update.latestVersion ?? ''}，正在准备下载…`}
+                    `发现新版本 v${state.update.latestVersion ?? ''}。${
+                      settings.autoDownloadUpdates ? '正在自动下载…' : '点击「下载更新」后再下载。'
+                    }`}
                   {state.update.phase === 'downloading' &&
                     `正在下载 v${state.update.latestVersion ?? ''}（${updateProgress?.progress ?? state.update.progress ?? 0}%）。`}
                   {state.update.phase === 'ready' &&
@@ -1980,6 +1982,11 @@ export function App(): JSX.Element {
                   >
                     {state.update.phase === 'checking' ? '检查中…' : '检查更新'}
                   </button>
+                  {state.update.phase === 'available' && (
+                    <button className="primary" onClick={() => void downloadUpdate()}>
+                      下载更新
+                    </button>
+                  )}
                   {state.update.phase === 'error' && state.update.latestVersion && (
                     <button className="primary" onClick={() => void downloadUpdate()}>
                       重试下载
@@ -2000,6 +2007,18 @@ export function App(): JSX.Element {
                     打开发布页
                   </button>
                 </div>
+                <label className="switch-row update-auto">
+                  <span>发现新版本后自动下载</span>
+                  <input
+                    type="checkbox"
+                    className="switch"
+                    checked={settings.autoDownloadUpdates}
+                    onChange={(event) => void patch({ autoDownloadUpdates: event.target.checked })}
+                  />
+                </label>
+                <p className="hint">
+                  关闭时只弹出提示，点「下载更新」后才下载；无论开关如何，都需要你点「重启并更新」才会替换程序。
+                </p>
               </div>
 
               <div className="panel-card">
