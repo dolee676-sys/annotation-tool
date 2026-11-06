@@ -237,6 +237,9 @@ tests/core.test.ts       纯函数、提示词、提问/注解模式、导航安
 tests/ai.test.ts         OpenAI / Ollama 解析、401、坏行、中止测试
 tests/selection.test.ts  取词服务启动失败、错误保留与重试测试
 tests/updates.e2e.test.ts 更新包校验失败删除、替换成功、替换失败回滚
+tests/history.test.ts    历史压缩/删除/清空失败回滚
+tests/settings.test.ts   设置写盘失败、密钥加密与读取
+tests/compress.test.ts   压缩提交失败时旧记录保留
 ```
 
 ### 安全边界
@@ -266,8 +269,9 @@ tests/updates.e2e.test.ts 更新包校验失败删除、替换成功、替换失
 <summary>开发验证记录（2026-11-05，点开）</summary>
 
 - `npm run typecheck`：通过
-- `npm test`：24 项通过（价目、消耗倍率、免费标识、选区标记、多轮追问、提问先作答、选中问题先回答再解释、三段式注解、导航信任、版本比较、更新包校验/结果解析、更新脚本成功替换、失败回滚、旧用量 latencyMs 守卫、OpenAI SSE、Ollama NDJSON、401、坏行、中止、模型列表、取词服务生命周期）
+- `npm test`：32 项通过（价目、消耗倍率、免费标识、选区标记、多轮追问、提问先作答、选中问题先回答再解释、词/问题/段落分流、导航信任、版本比较、更新包校验/结果解析、更新脚本成功替换、失败回滚、历史压缩提交/失败回滚/清空回滚、设置写盘失败与密钥加密、压缩提交失败保留旧记录、旧用量 latencyMs 守卫、OpenAI SSE、Ollama NDJSON、401、坏行、中止、模型列表、取词服务生命周期）
 - `npm run build`：通过（主进程 / 3 个 preload / 渲染进程）
+- Release 工作流现在会先跑 `npm test`，再构建和发布，测试失败不会出包
 - `npm run selftest`：通过
   - 模拟划词 → 小框 → 面板 → 流式输出 → 入库
   - 注解 2 次、提问 2 次，加历史压缩等共 7 次请求 / 4260 tokens；`turns=2`，验证追问带上了上一轮回答

@@ -1,4 +1,14 @@
-import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, screen, shell } from 'electron'
+import {
+  BrowserWindow,
+  Notification,
+  app,
+  clipboard,
+  dialog,
+  ipcMain,
+  safeStorage,
+  screen,
+  shell
+} from 'electron'
 import { mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { chat, isLocalBaseUrl, listModels } from './ai'
@@ -7,7 +17,7 @@ import { compressHistory } from './compress'
 import { getSelectionContext } from './context'
 import { FavoriteStore } from './favorites'
 import { HISTORY_REWRITE_BATCH, HistoryStore } from './history'
-import { buildSystemPrompt, buildUserMessage, isQuestionLike, markSelection } from './prompt'
+import { buildSystemPrompt, buildUserMessage, markSelection } from './prompt'
 import { estimateCostCny, usageMultiplier } from '../shared/pricing'
 import { isFreeModel } from '../shared/presets'
 import { SelectionService, isUsablePoint, toDipPoint, type Point, type RawSelection } from './selection'
@@ -487,7 +497,7 @@ async function startAnnotation(): Promise<void> {
       mode: 'annotate',
       annotatePrompt: s.prompt,
       hasContext: Boolean(a.context),
-      questionLike: isQuestionLike(a.text)
+      selectionText: a.text
     }),
     user: buildUserMessage({
       mode: 'annotate',
@@ -1128,9 +1138,23 @@ function startServices(): void {
   } catch {
     /* not supported on this platform */
   }
-  settings = new SettingsStore()
+  settings = new SettingsStore(app.getPath('userData'), {
+    encrypt: (key) =>
+      safeStorage.isEncryptionAvailable()
+        ? `enc:${safeStorage.encryptString(key).toString('base64')}`
+        : `plain:${Buffer.from(key, 'utf8').toString('base64')}`,
+    decrypt: (value) => {
+      if (value.startsWith('enc:')) {
+        return safeStorage.decryptString(Buffer.from(value.slice(4), 'base64'))
+      }
+      if (value.startsWith('plain:')) {
+        return Buffer.from(value.slice(6), 'base64').toString('utf8')
+      }
+      return ''
+    }
+  })
   usage = new UsageStore()
-  history = new HistoryStore()
+  history = new HistoryStore(app.getPath('userData'))
   favorites = new FavoriteStore()
   if (app.isPackaged && settings.get().launchAtLogin) {
     app.setLoginItemSettings({

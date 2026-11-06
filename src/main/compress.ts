@@ -1,12 +1,12 @@
-import { chat, isLocalBaseUrl } from './ai'
-import { estimateCostCny } from '../shared/pricing'
+import { chat, isLocalBaseUrl } from './ai.ts'
+import { estimateCostCny } from '../shared/pricing.ts'
 import {
   HISTORY_KEEP_RECENT,
   HISTORY_LIMIT,
   type HistoryCompressProgress,
   type HistoryRecord,
   type HistorySummary
-} from '../shared/types'
+} from '../shared/types.ts'
 import type { HistoryStore } from './history'
 import type { StoredProvider } from './settings'
 import type { UsageStore } from './usage'

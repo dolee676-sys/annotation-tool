@@ -1,6 +1,6 @@
 {
   "name": "zhujie",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "description": "划词注解 · 选中文字，旁边出现「注解」，点开由本机模型解析",
   "main": "out/main/index.js",
   "author": "piona",
@@ -10,7 +10,7 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "node --test tests/core.test.ts tests/ai.test.ts tests/selection.test.ts tests/updates.e2e.test.ts",
+    "test": "node --test tests/core.test.ts tests/ai.test.ts tests/selection.test.ts tests/updates.e2e.test.ts tests/history.test.ts tests/settings.test.ts tests/compress.test.ts",
     "selftest": "electron-vite build && electron . --selftest",
     "dist": "electron-vite build && electron-builder --win --x64"
   },

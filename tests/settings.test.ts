@@ -1,0 +1,55 @@
+import assert from 'node:assert/strict'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import test from 'node:test'
+import { SettingsStore } from '../src/main/settings.ts'
+
+function tempDir(): string {
+  return mkdtempSync(join(tmpdir(), 'zhujie-settings-test-'))
+}
+
+const codec = {
+  encrypt: (key: string) => `test:${Buffer.from(key, 'utf8').toString('base64')}`,
+  decrypt: (value: string) =>
+    value.startsWith('test:') ? Buffer.from(value.slice(5), 'base64').toString('utf8') : ''
+}
+
+test('设置写入失败时返回 false 并保留错误信息', () => {
+  const dir = tempDir()
+  try {
+    const store = new SettingsStore(dir)
+    const file = join(dir, 'settings.json')
+    rmSync(file, { force: true })
+    mkdirSync(file)
+    assert.equal(store.flush(), false)
+    assert.ok(store.getLastWriteError())
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('设置中的 API Key 通过注入的加密器保存和读取', () => {
+  const dir = tempDir()
+  try {
+    const store = new SettingsStore(dir, codec)
+    store.saveProvider({
+      id: 'custom',
+      name: '测试接口',
+      kind: 'openai',
+      baseUrl: 'http://127.0.0.1:9999/v1',
+      apiKey: 'secret-key'
+    })
+    assert.equal(store.flush(), true)
+    const raw = JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as {
+      providers: Array<{ id: string; keyEnc?: string }>
+    }
+    const saved = raw.providers.find((provider) => provider.id === 'custom')
+    assert.ok(saved?.keyEnc?.startsWith('test:'))
+
+    const reopened = new SettingsStore(dir, codec)
+    assert.equal(reopened.apiKey('custom'), 'secret-key')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

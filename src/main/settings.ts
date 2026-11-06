@@ -1,4 +1,3 @@
-import { app, safeStorage } from 'electron'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
@@ -9,8 +8,8 @@ import {
   type ProviderView,
   type SettingsPatch,
   type SettingsView
-} from '../shared/types'
-import { PROVIDER_PRESETS } from '../shared/presets'
+} from '../shared/types.ts'
+import { PROVIDER_PRESETS } from '../shared/presets.ts'
 
 export interface StoredProvider {
   id: string
@@ -101,23 +100,31 @@ function defaults(): StoredSettings {
   }
 }
 
-function settingsPath(): string {
-  const dir = app.getPath('userData')
+function settingsPath(dir: string): string {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   return join(dir, 'settings.json')
 }
 
+export interface SettingsCodec {
+  encrypt: (key: string) => string
+  decrypt: (value: string) => string
+}
+
 export class SettingsStore {
+  private readonly dir: string
+  private readonly codec?: SettingsCodec
   private data: StoredSettings
   private timer: NodeJS.Timeout | null = null
   private lastWriteError: string | null = null
 
-  constructor() {
+  constructor(dir: string, codec?: SettingsCodec) {
+    this.dir = dir
+    this.codec = codec
     this.data = this.load()
   }
 
   private load(): StoredSettings {
-    const file = settingsPath()
+    const file = settingsPath(this.dir)
     if (!existsSync(file)) {
       const d = defaults()
       this.writeNow(d)
@@ -159,7 +166,7 @@ export class SettingsStore {
   }
 
   private writeNow(data: StoredSettings): boolean {
-    const file = settingsPath()
+    const file = settingsPath(this.dir)
     const tmp = `${file}.tmp`
     try {
       writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8')
@@ -224,18 +231,12 @@ export class SettingsStore {
 
   apiKey(id: string): string {
     const p = this.getProvider(id)
-    if (!p?.keyEnc) return ''
+    if (!p?.keyEnc || !this.codec) return ''
     try {
-      if (p.keyEnc.startsWith('enc:')) {
-        return safeStorage.decryptString(Buffer.from(p.keyEnc.slice(4), 'base64'))
-      }
-      if (p.keyEnc.startsWith('plain:')) {
-        return Buffer.from(p.keyEnc.slice(6), 'base64').toString('utf8')
-      }
+      return this.codec.decrypt(p.keyEnc)
     } catch {
       return ''
     }
-    return ''
   }
 
   update(patch: SettingsPatch): StoredSettings {
@@ -328,10 +329,7 @@ export class SettingsStore {
   }
 
   private encrypt(key: string): string {
-    if (safeStorage.isEncryptionAvailable()) {
-      return `enc:${safeStorage.encryptString(key).toString('base64')}`
-    }
-    return `plain:${Buffer.from(key, 'utf8').toString('base64')}`
+    return this.codec?.encrypt(key) ?? `plain:${Buffer.from(key, 'utf8').toString('base64')}`
   }
 
   clearDetectedApps(): void {

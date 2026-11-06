@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   buildSystemPrompt,
   buildUserMessage,
+  classifySelection,
   isQuestionLike,
   markSelection
 } from '../src/main/prompt.ts'
@@ -163,6 +164,7 @@ test('点注解按钮但选中的是问题时，先回答再解释', () => {
   assert.equal(isQuestionLike('如何理解 init 方法'), true)
   assert.equal(isQuestionLike('这样配置可以吗'), true)
   assert.equal(isQuestionLike('init()'), false)
+  assert.equal(classifySelection('init()'), 'word')
 
   const system = buildSystemPrompt({
     mode: 'annotate',
@@ -190,6 +192,33 @@ test('点注解按钮但选中的是问题时，先回答再解释', () => {
     message.indexOf('【问题所在文章片段') < message.indexOf('【用户提出的问题】'),
     '问题应放在参考片段之后'
   )
+})
+
+test('长段落按段落注解，不套用词义三段式', () => {
+  const paragraph =
+    'Spring 的依赖注入容器会在启动时读取配置类，创建 Bean 定义，然后按照依赖关系完成实例化和注入。' +
+    '这个过程涉及配置解析、BeanDefinition 注册、后置处理器、代理创建以及生命周期回调，理解顺序很重要。'
+  assert.equal(classifySelection(paragraph), 'paragraph')
+  assert.equal(classifySelection(`${paragraph}？`), 'paragraph')
+
+  const system = buildSystemPrompt({
+    mode: 'annotate',
+    annotatePrompt: 'CUSTOM_STYLE',
+    hasContext: true,
+    selectionText: paragraph
+  })
+  assert.match(system, /整段文字/)
+  assert.match(system, /不要套用/)
+  assert.match(system, /CUSTOM_STYLE/)
+
+  const message = buildUserMessage({
+    mode: 'annotate',
+    text: paragraph,
+    contextChars: 300
+  })
+  assert.match(message, /\*\*概括\*\*/)
+  assert.match(message, /\*\*补充\*\*/)
+  assert.doesNotMatch(message, /\*\*词义\*\*/)
 })
 
 test('上下文注解把选中文字放在文章片段之前，避免模型转去解释上下文', () => {

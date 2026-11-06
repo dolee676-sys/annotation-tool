@@ -1,7 +1,6 @@
-import { app } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { HISTORY_LIMIT, type HistoryRecord, type HistorySummary } from '../shared/types'
+import { HISTORY_LIMIT, type HistoryRecord, type HistorySummary } from '../shared/types.ts'
 
 const MAX_SUMMARIES = 50
 export const HISTORY_REWRITE_BATCH = 25
@@ -13,8 +12,7 @@ export class HistoryStore {
   private summaries: HistorySummary[] = []
   private pendingDrops = 0
 
-  constructor() {
-    const dir = app.getPath('userData')
+  constructor(dir: string) {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     this.file = join(dir, 'history.jsonl')
     this.summaryFile = join(dir, 'history-summaries.json')
