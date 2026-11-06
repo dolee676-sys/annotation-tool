@@ -10,7 +10,7 @@
 
 OneNote、Word、PDF、浏览器、编辑器都能用。支持本机模型和云端模型，费用透明。
 
-[**下载 Windows 版**](https://github.com/dolee676-sys/annotation-tool/releases/latest) · [15 秒演示](#演示) · [为什么不是又一个划词翻译](#为什么不是又一个划词翻译) · [第一次配置](#第一次使用配置-ai)
+[**下载 Windows 版**](https://github.com/dolee676-sys/annotation-tool/releases/latest) · [15 秒演示](#演示) · [它解决什么问题](#它解决什么问题) · [第一次配置](#第一次使用配置-ai)
 
 > 制作：piona · MIT License · [GitHub 仓库](https://github.com/dolee676-sys/annotation-tool)
 
@@ -20,28 +20,14 @@ OneNote、Word、PDF、浏览器、编辑器都能用。支持本机模型和云
 
 真实界面演示：选中文字 → 注 → 结合上下文回答 → 追问。截图里的模型是自测占位模型。
 
-## 为什么不是又一个划词翻译
+## 它解决什么问题
 
-大多数划词工具只把“选中的几个字”发给 AI。注解会读取来源应用里的上下文，按「词 / 问题 / 段落」分别回答，并把每次费用和历史留下来。
+注解关注阅读里最费劲的一步：不只把选中的几个字发给 AI，还会读取它所在段落，按「词 / 问题 / 段落」分别回答，并把每次费用和历史留下来。
 
 - **真的读上下文**：在 OneNote、Word、PDF 里选中词，读取它所在段落；不是只看选中的几个字。
 - **注 / 问分开**：注解按「词义 → 当前语境 → 作用」；问题先给答案再解释；都支持多轮追问。
 - **本机 / 云端都行**：Ollama、LM Studio 免费不联网；云端用你自己的 Key，倍率、费用、历史可见。
 
-### 和常见工具对比
-
-| | 注解 | [即懂](https://microsoftedge.microsoft.com/addons/detail/%E5%8D%B3%E6%87%82-%E5%88%92%E8%AF%8D%E8%A7%A3%E9%87%8A%EF%BC%8C%E7%BB%93%E5%90%88%E4%BD%A0%E7%9A%84%E4%B8%8A%E4%B8%8B%E6%96%87/kodjeigndbhlecbbgdmfemcdopggikfm?hl=zh-CN) | [Pot](https://github.com/pot-app/pot-desktop) | [nextai-translator](https://github.com/nextai-translator/nextai-translator) |
-|---|---|---|---|---|
-| 跨应用（OneNote/Word/PDF） | 支持 | —（网页内） | 支持 | 支持（桌面+浏览器） |
-| 读取来源应用上下文 | 支持 | 仅网页语境 | — | — |
-| 注 / 问双模式 | 支持 | 解释 + 追问 | 翻译/OCR 为主 | 翻译/解释为主 |
-| 本机模型 | 支持 | — | 插件/自定义 | 兼容接口 |
-| 费用 / 历史 / 收藏 | 支持 | 历史 | — | — |
-| 平台 | Windows | 浏览器 | Win/mac/Linux | Win/mac + 浏览器 |
-| 开源 | MIT | 闭源 | GPL-3.0（已归档） | AGPL-3.0 |
-
-> 定位不同：只需要网页翻译，即懂/Pot 更轻；在 OneNote/Word 里读长文、需要上下文和追问，注解更合适。表中只列公开确认的能力，未列不代表没有；对比基于公开信息，欢迎指正。
->
 > 如果这个项目对你有帮助，欢迎点一个 Star；遇到问题请开 [Issue](https://github.com/dolee676-sys/annotation-tool/issues)。
 
 ## 下载安装（Windows 10/11）
@@ -330,7 +316,7 @@ tests/compress.test.ts   压缩提交失败时旧记录保留
 
 ### 参考项目与许可证
 
-本项目以 MIT 发布。调研与使用情况如下：
+本项目以 MIT 发布。直接依赖的开源代码主要是 MIT 的 `selection-hook`，以及 Electron、React、marked、DOMPurify 等常用库。下面仅用于说明产品/交互调研与许可证，不构成产品对比；GPL/AGPL 项目未复制代码。
 
 | 项目 | 许可证 | 用法 |
 | --- | --- | --- |

@@ -10,7 +10,7 @@
 
 Works in OneNote, Word, PDF readers, browsers, and editors. Use a local model or your own cloud API key. Costs stay visible.
 
-[**Download for Windows**](https://github.com/dolee676-sys/annotation-tool/releases/latest) · [15-second demo](#demo) · [Why another selection tool?](#why-another-selection-tool) · [First run](#first-run)
+[**Download for Windows**](https://github.com/dolee676-sys/annotation-tool/releases/latest) · [15-second demo](#demo) · [What it solves](#what-it-solves) · [First run](#first-run)
 
 > Made by piona · MIT License · [GitHub repository](https://github.com/dolee676-sys/annotation-tool)
 
@@ -18,30 +18,23 @@ Works in OneNote, Word, PDF readers, browsers, and editors. Use a local model or
 
 ![Select text → annotate → ask](docs/demo.en.gif)
 
-Real UI demo: select text → annotate → context-aware answer → follow-up. The model shown in the screenshots is a self-test placeholder. The screenshots show the Chinese UI; you can switch to English under Settings → Models → Language.
+Real UI demo: select text → Explain / Ask → context-aware answer → follow-up. The model shown in the screenshots is a self-test placeholder. The GIF uses a Chinese panel sample; the full app UI can be switched to English under Settings → Models → Language.
 
-## Why another selection tool?
+## Screenshots
 
-Most selection tools send only the selected characters to the model. Annotation reads the surrounding context from the source app, routes the request as a word / question / paragraph, and keeps cost and history locally.
+| Settings and language | Prompt and answer order |
+| --- | --- |
+| ![Models settings](docs/en/models.png) | ![Prompt settings](docs/en/prompt.png) |
+| ![App scope](docs/en/apps.png) | ![About](docs/en/about.png) |
+
+## What it solves
+
+Annotation focuses on the part of reading that takes the most effort: it sends more than the selected characters, reads the paragraph around them, routes the request as a word / question / paragraph, and keeps cost and history locally.
 
 - **Context, not just the selection**: select a term in OneNote, Word, or a PDF and it reads the paragraph around it.
-- **Two actions**: Annotate explains term → current context → role. Ask answers the question first, then explains. Both support follow-ups.
+- **Two actions**: Explain explains term → current context → role. Ask answers the question first, then explains. Both support follow-ups.
 - **Local or cloud**: Ollama / LM Studio run locally for free. Cloud providers use your own API key; multipliers, cost, and history stay visible.
 
-### How it compares
-
-| | Annotation | [Jidong](https://microsoftedge.microsoft.com/addons/detail/%E5%8D%B3%E6%87%82-%E5%88%92%E8%AF%8D%E8%A7%A3%E9%87%8A%EF%BC%8C%E7%BB%93%E5%90%88%E4%BD%A0%E7%9A%84%E4%B8%8A%E4%B8%8B%E6%96%87/kodjeigndbhlecbbgdmfemcdopggikfm?hl=zh-CN) | [Pot](https://github.com/pot-app/pot-desktop) | [nextai-translator](https://github.com/nextai-translator/nextai-translator) |
-|---|---|---|---|---|
-| Works across apps (OneNote/Word/PDF) | Yes | — (web pages only) | Yes | Yes (desktop + browser) |
-| Reads source-app context | Yes | Web page context only | — | — |
-| Separate annotate / ask modes | Yes | Explain + follow-up | Translation/OCR first | Translation/explain |
-| Local models | Yes | — | Plugin/custom setup | OpenAI-compatible endpoint |
-| Cost / history / favorites | Yes | History | — | — |
-| Platform | Windows | Browser (Edge extension) | Win/mac/Linux | Win/mac + browser |
-| License | MIT | Closed source | GPL-3.0 (archived) | AGPL-3.0 |
-
-> Different tools for different jobs. If you only need web translation, Jidong/Pot are lighter. If you read long documents in OneNote/Word and need context plus follow-ups, Annotation fits better. Only publicly confirmed capabilities are listed; a dash does not mean the feature is absent. Based on public information; corrections welcome.
->
 > If this saves you time, a star helps others find it. For bugs or ideas, open an [issue](https://github.com/dolee676-sys/annotation-tool/issues).
 
 ## Download and install (Windows 10/11)
@@ -127,6 +120,10 @@ npm run dist
 ```
 
 For provider tutorials and Chinese troubleshooting, see the [Chinese README](README.md).
+
+## Credits and licenses
+
+This project is MIT. Direct runtime dependencies include [selection-hook](https://github.com/0xfullex/selection-hook) (MIT), Electron (MIT), React / React DOM (MIT), [marked](https://github.com/markedjs/marked) (MIT), and [DOMPurify](https://github.com/cure53/DOMPurify) (Apache-2.0 OR MPL-2.0). GPL/AGPL projects reviewed for product and interaction research were not copied. See the Chinese README for the full reference table.
 
 ## License
 

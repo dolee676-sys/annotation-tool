@@ -13,11 +13,18 @@ export function Chip(): JSX.Element {
   const [busy, setBusy] = useState<'annotate' | 'ask' | null>(null)
   const [appearId, setAppearId] = useState(0)
   const [locale, setLocale] = useState<Locale>('zh-CN')
+  const english = locale === 'en-US'
   const t = (key: string): string => translate(locale, key)
 
   useEffect(() => {
-    void window.zhujie.getLocale().then(setLocale)
-    return window.zhujie.onAppear(() => setAppearId((value) => value + 1))
+    const refreshLocale = (): void => {
+      void window.zhujie.getLocale().then(setLocale)
+    }
+    refreshLocale()
+    return window.zhujie.onAppear(() => {
+      refreshLocale()
+      setAppearId((value) => value + 1)
+    })
   }, [])
 
   const trigger = (action: 'annotate' | 'ask'): void => {
@@ -28,7 +35,7 @@ export function Chip(): JSX.Element {
 
   return (
     <div className="chip-host" key={appearId}>
-      <div className={busy ? 'chip-shell busy' : 'chip-shell'}>
+      <div className={`chip-shell${english ? ' en' : ''}${busy ? ' busy' : ''}`}>
         <button
           className="chip-half left"
           title={t('AI 注解这段文字')}
@@ -36,7 +43,7 @@ export function Chip(): JSX.Element {
           disabled={Boolean(busy)}
           onClick={() => trigger('annotate')}
         >
-          注
+          {english ? 'Explain' : '注'}
         </button>
         <button
           className="chip-half right"
@@ -45,7 +52,7 @@ export function Chip(): JSX.Element {
           disabled={Boolean(busy)}
           onClick={() => trigger('ask')}
         >
-          问
+          {english ? 'Ask' : '问'}
         </button>
       </div>
     </div>

@@ -2280,6 +2280,17 @@ export function App(): JSX.Element {
                   <strong>piona</strong>
                 </div>
                 <div>
+                  <span className="muted">GitHub</span>
+                  <a
+                    className="link"
+                    href="https://github.com/dolee676-sys/annotation-tool"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    dolee676-sys/annotation-tool
+                  </a>
+                </div>
+                <div>
                   <span className="muted">{t('平台')}</span>
                   <strong>{state.platform}</strong>
                 </div>
@@ -2486,6 +2497,9 @@ export function App(): JSX.Element {
                     <span>{t('桌面划词产品调研；未复用其代码。')}</span>
                   </li>
                 </ul>
+                <p className="hint">
+                  {t('本项目直接依赖 MIT 的 selection-hook 与常用开源库；GPL/AGPL 项目仅作产品与交互调研，未复制其代码。')}
+                </p>
               </div>
             </section>
           )}

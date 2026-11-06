@@ -456,6 +456,8 @@ const EN: Record<string, string> = {
     'Interaction research for selection translation; repository archived; no code reused.',
   '桌面划词产品调研；未复用其代码。':
     'Desktop selection product research; no code reused.',
+  '本项目直接依赖 MIT 的 selection-hook 与常用开源库；GPL/AGPL 项目仅作产品与交互调研，未复制其代码。':
+    'This project directly depends on MIT-licensed selection-hook and common open-source libraries. GPL/AGPL projects were used only for product/interaction research; no code was copied.',
   '已在列表中': 'Already in the list',
   '已加入：{name}': 'Added: {name}',
   '提示词不能为空': 'The prompt cannot be empty',
