@@ -102,9 +102,14 @@ The app starts in **Local only** mode. If you do not have Ollama / LM Studio ins
 
 - Windows 10/11 x64 only.
 - The UI can be switched between Chinese and English under Settings → Models → Language.
-- The build is unsigned, so SmartScreen may warn on first launch.
+- The build is unsigned while the SignPath Foundation application is pending, so SmartScreen may warn on first launch.
 - Context capture relies on Windows UI Automation. Some apps (Chromium PDF viewers, elevated windows, remote desktop, exclusive-fullscreen games) may not expose text; the app then sends only the selection.
 - Early-stage project. Issues and feedback are welcome.
+
+## Code signing and privacy
+
+- **Code signing:** Windows releases are applying to the [SignPath Foundation](https://signpath.org/) open-source signing program. The certificate is issued to SignPath Foundation, not to the maintainer; builds remain unsigned until the application is approved. See [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).
+- **Privacy:** the project has no developer account, telemetry, analytics, or cloud sync. Local mode does not send text off the device; cloud mode sends selected text, context, and questions only to the model provider you choose. See [PRIVACY.md](PRIVACY.md).
 
 ## Build from source
 
