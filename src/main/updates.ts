@@ -14,6 +14,7 @@ import { basename, dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import type { UpdateStatus } from '../shared/types'
 import { isNewerVersion } from '../shared/version'
+import { checksumMatches, parseApplyResult, parseChecksum } from './updateSafety'
 
 const run = promisify(execFile)
 const REPO = 'dolee676-sys/annotation-tool'
@@ -276,14 +277,9 @@ export class UpdateManager {
     const file = join(this.updateDir(), 'apply-result.txt')
     if (!existsSync(file)) return null
     try {
-      const raw = readFileSync(file, 'utf8').replace(/^\uFEFF/, '').trim()
+      const raw = readFileSync(file, 'utf8')
       rmSync(file, { force: true })
-      if (raw === 'ok') return { ok: true }
-      if (raw.startsWith('fail:')) {
-        const index = raw.indexOf('rollback-failed:')
-        const message = index >= 0 ? raw.slice(0, index) : raw
-        return { ok: false, message: message.replace(/^fail:\s*/, '').trim() || '未知错误' }
-      }
+      return parseApplyResult(raw)
     } catch {
       /* result is best effort */
     }
@@ -320,9 +316,9 @@ export class UpdateManager {
       throw new Error('新版本没有提供 SHA-256 校验文件，已停止自动安装。请到发布页手动下载。')
     }
     const text = await res.text()
-    const match = text.match(/\b([a-f0-9]{64})\b/i)
-    if (!match) throw new Error('更新包校验文件格式不正确，已停止安装。')
-    return match[1].toLowerCase()
+    const checksum = parseChecksum(text)
+    if (!checksum) throw new Error('更新包校验文件格式不正确，已停止安装。')
+    return checksum
   }
 
   private async downloadRelease(latest: string, releaseUrl?: string): Promise<void> {
@@ -379,7 +375,7 @@ export class UpdateManager {
 
     this.onProgress(100, '正在校验更新包')
     const actual = await sha256File(zipPath)
-    if (actual !== checksum) {
+    if (!checksumMatches(checksum, actual)) {
       throw new Error('更新包 SHA-256 校验失败，已删除下载内容。')
     }
 

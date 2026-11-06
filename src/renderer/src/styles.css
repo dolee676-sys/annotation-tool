@@ -18,7 +18,7 @@
   --shadow: 0 22px 60px rgba(48, 38, 25, 0.18), 0 2px 8px rgba(48, 38, 25, 0.08);
   --radius: 14px;
   --sans: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, -apple-system, sans-serif;
-  --serif: "Iowan Old Style", "Noto Serif SC", "Songti SC", Georgia, serif;
+  --serif: "Iowan Old Style", "Noto Serif SC", "Songti SC", "SimSun", "宋体", Georgia, serif;
 }
 
 @media (prefers-color-scheme: dark) {

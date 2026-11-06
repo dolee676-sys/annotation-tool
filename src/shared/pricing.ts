@@ -8,6 +8,7 @@ export const MODEL_PRICES_CNY: Record<string, ModelPrice> = {
   'deepseek-chat': { in: 2, out: 8 },
   'deepseek-reasoner': { in: 4, out: 16 },
   'deepseek-flash': { in: 2, out: 8 },
+  // 官方仍受理的旧别名，请求由 V4.1 Flash 承接并按 Flash 计价；不在模型预设中展示。
   'deepseek-v4-flash': { in: 2, out: 8 },
   'deepseek-v4-pro': { in: 9, out: 27 },
   'qwen-plus': { in: 0.8, out: 2 },

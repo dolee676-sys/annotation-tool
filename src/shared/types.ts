@@ -43,6 +43,7 @@ export interface SettingsView {
   contextChars: number
   historyEnabled: boolean
   autoDownloadUpdates: boolean
+  checkUpdatesOnStartup: boolean
 }
 
 export interface AppState {
@@ -253,6 +254,7 @@ export interface SettingsPatch {
   contextChars?: number
   historyEnabled?: boolean
   autoDownloadUpdates?: boolean
+  checkUpdatesOnStartup?: boolean
 }
 
 export interface ProviderPatch {

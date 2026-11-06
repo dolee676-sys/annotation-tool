@@ -40,6 +40,7 @@ export interface StoredSettings {
   contextChars: number
   historyEnabled: boolean
   autoDownloadUpdates: boolean
+  checkUpdatesOnStartup: boolean
   promptStandardVersion: number
   providers: StoredProvider[]
 }
@@ -94,6 +95,7 @@ function defaults(): StoredSettings {
     contextChars: 300,
     historyEnabled: true,
     autoDownloadUpdates: false,
+    checkUpdatesOnStartup: true,
     promptStandardVersion: 2,
     providers: defaultProviders()
   }
@@ -259,6 +261,9 @@ export class SettingsStore {
     if (typeof patch.historyEnabled === 'boolean') next.historyEnabled = patch.historyEnabled
     if (typeof patch.autoDownloadUpdates === 'boolean') {
       next.autoDownloadUpdates = patch.autoDownloadUpdates
+    }
+    if (typeof patch.checkUpdatesOnStartup === 'boolean') {
+      next.checkUpdatesOnStartup = patch.checkUpdatesOnStartup
     }
     if (typeof patch.contextChars === 'number') {
       next.contextChars = Math.min(1000, Math.max(100, Math.round(patch.contextChars)))

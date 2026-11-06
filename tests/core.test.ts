@@ -11,6 +11,11 @@ import { summarizeUsage } from '../src/main/usageSummary.ts'
 import { isFreeModel, presetById } from '../src/shared/presets.ts'
 import { estimateCostCny, formatCny, formatUsageMultiplier, priceForModel, usageMultiplier } from '../src/shared/pricing.ts'
 import { isNewerVersion } from '../src/shared/version.ts'
+import {
+  checksumMatches,
+  parseApplyResult,
+  parseChecksum
+} from '../src/main/updateSafety.ts'
 import type { UsageRecord } from '../src/shared/types.ts'
 
 test('按模型价目估算费用，本机模型为 0', () => {
@@ -217,6 +222,24 @@ test('只允许本地应用页面导航与发送 IPC', () => {
     isTrustedRendererUrl('http://localhost:5173.evil.example/', appFile, 'http://localhost:5173'),
     false
   )
+})
+
+test('更新包校验和与安装结果解析', () => {
+  const sum = 'a'.repeat(64)
+  assert.equal(parseChecksum(`${sum}  zhujie-win-x64.zip`), sum)
+  assert.equal(parseChecksum('not a checksum'), null)
+  assert.equal(checksumMatches(sum, sum.toUpperCase()), true)
+  assert.equal(checksumMatches(sum, 'b'.repeat(64)), false)
+  assert.deepEqual(parseApplyResult('ok'), { ok: true })
+  assert.deepEqual(parseApplyResult('\uFEFFfail: copy failed'), {
+    ok: false,
+    message: 'copy failed'
+  })
+  assert.deepEqual(parseApplyResult('fail: copy failed\nrollback-failed: locked'), {
+    ok: false,
+    message: 'copy failed'
+  })
+  assert.equal(parseApplyResult('weird'), null)
 })
 
 test('更新版本比较支持 v 前缀和多段数字', () => {

@@ -1246,7 +1246,7 @@ app.whenReady().then(() => {
     const silentStart = process.argv.includes('--hidden')
     if (!silentStart) windows.openSettings()
     setTimeout(() => void refreshLocalModels(), 800)
-    if (updater.getStatus().phase !== 'error') {
+    if (settings.get().checkUpdatesOnStartup && updater.getStatus().phase !== 'error') {
       setTimeout(() => void updater.check(), 6000)
     }
   }

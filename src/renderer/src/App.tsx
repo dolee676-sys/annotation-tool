@@ -370,7 +370,11 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     if (!state || tabInitialized) return
-    if (!state.settings.defaultModel) setTab('models')
+    const hasUsableModel = state.providers.some(
+      (provider) =>
+        provider.models.length > 0 && (provider.hasKey || isLocalAddress(provider.baseUrl))
+    )
+    if (!state.settings.defaultModel || !hasUsableModel) setTab('models')
     setTabInitialized(true)
   }, [state, tabInitialized])
 
@@ -2199,6 +2203,17 @@ export function App(): JSX.Element {
                   </button>
                 </div>
                 <label className="switch-row update-auto">
+                  <span>启动时检查更新</span>
+                  <input
+                    type="checkbox"
+                    className="switch"
+                    checked={settings.checkUpdatesOnStartup}
+                    onChange={(event) =>
+                      void patch({ checkUpdatesOnStartup: event.target.checked })
+                    }
+                  />
+                </label>
+                <label className="switch-row update-auto">
                   <span>发现新版本后自动下载</span>
                   <input
                     type="checkbox"
@@ -2209,6 +2224,9 @@ export function App(): JSX.Element {
                 </label>
                 <p className="hint">
                   关闭时只弹出提示，点「下载更新」后才下载；无论开关如何，都需要你点「重启并更新」才会替换程序。
+                </p>
+                <p className="hint">
+                  安装包未做代码签名；SHA-256 主要防传输损坏，不能完全防止发布账号被入侵。只从本仓库 Releases 更新，介意供应链风险可关闭自动下载。
                 </p>
               </div>
 

@@ -1,6 +1,6 @@
 {
   "name": "zhujie",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "description": "划词注解 · 选中文字，旁边出现「注解」，点开由本机模型解析",
   "main": "out/main/index.js",
   "author": "piona",
