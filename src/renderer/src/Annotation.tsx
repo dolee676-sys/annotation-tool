@@ -288,7 +288,6 @@ export function Panel(): JSX.Element {
       setFavoriteBusy(false)
     }
   }
-  const latestMeta = followUps.length ? followUps[followUps.length - 1].meta : initialMeta
   const latestStatus = followUps.length ? followUps[followUps.length - 1].status : initialStatus
 
   const copy = async (): Promise<void> => {
@@ -506,6 +505,9 @@ export function Panel(): JSX.Element {
                 <p>{initialError}</p>
                 <div className="error-actions">
                   <button onClick={() => void window.zhujie.panelRegenerate()}>重试</button>
+                  <button className="ghost" onClick={() => void window.zhujie.panelOpenSettings()}>
+                    打开设置
+                  </button>
                   <button className="ghost" onClick={() => void window.zhujie.panelClose()}>
                     关闭
                   </button>
@@ -543,6 +545,9 @@ export function Panel(): JSX.Element {
                 <p>{item.error}</p>
                 <div className="error-actions">
                   <button onClick={() => retryFollowUp(item)}>重试</button>
+                  <button className="ghost" onClick={() => void window.zhujie.panelOpenSettings()}>
+                    打开设置
+                  </button>
                 </div>
               </div>
             ) : (
@@ -589,13 +594,6 @@ export function Panel(): JSX.Element {
       <footer className="panel-foot">
         <span className={`live-dot ${busy ? 'on' : ''}`} aria-hidden="true" />
         <span>{footerStatus}</span>
-        {latestMeta && (
-          <span className="foot-meta">
-            {latestMeta.usage.estimated ? '≈' : ''}
-            {latestMeta.usage.totalTokens.toLocaleString()} tokens · {formatCny(latestMeta.cost)} ·{' '}
-            {Math.max(1, Math.round(latestMeta.latencyMs / 100) / 10)}s
-          </span>
-        )}
         <span className="foot-spacer" />
         {favoriteError && <span className="quote-warn">{favoriteError}</span>}
         {lightModel && (

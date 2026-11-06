@@ -63,6 +63,7 @@ export interface ZhujieApi {
   panelFavorite(): Promise<FavoriteToggleResult>
   panelSetPinned(pinned: boolean): Promise<boolean>
   panelSwitchModel(payload: { providerId: string; model: string }): Promise<boolean>
+  panelOpenSettings(): Promise<boolean>
   minimizeWindow(): Promise<boolean>
   hideWindow(): Promise<boolean>
   on(channel: 'state:changed', callback: (payload: AppState) => void): () => void

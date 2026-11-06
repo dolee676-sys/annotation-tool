@@ -2545,6 +2545,18 @@ button.link {
   white-space: nowrap;
 }
 
+.data-table.numeric-3 th:nth-child(n + 2),
+.data-table.numeric-3 td:nth-child(n + 2),
+.recent-table th:nth-child(4),
+.recent-table th:nth-child(5),
+.recent-table th:nth-child(6),
+.recent-table td:nth-child(4),
+.recent-table td:nth-child(5),
+.recent-table td:nth-child(6) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .status {
   display: inline-block;
   padding: 1px 7px;

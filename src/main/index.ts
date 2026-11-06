@@ -1106,6 +1106,11 @@ function registerIpc(): void {
     switchPanelModel(String(payload?.providerId ?? ''), String(payload?.model ?? ''))
   )
 
+  handle('panel:open-settings', () => {
+    windows.openSettings()
+    return true
+  })
+
   handle('window:minimize', (event) => {
     BrowserWindow.fromWebContents(event.sender)?.minimize()
     return true

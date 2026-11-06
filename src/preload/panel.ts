@@ -21,6 +21,7 @@ const api = {
   panelSetPinned: (pinned: boolean) => ipcRenderer.invoke('panel:pin', pinned),
   panelSwitchModel: (payload: { providerId: string; model: string }) =>
     ipcRenderer.invoke('panel:switch-model', payload),
+  panelOpenSettings: () => ipcRenderer.invoke('panel:open-settings'),
   on: (channel: EventChannel, callback: (payload: unknown) => void) => {
     if (!EVENT_CHANNELS.includes(channel)) return () => undefined
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown): void => callback(payload)

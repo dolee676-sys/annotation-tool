@@ -1029,7 +1029,7 @@ export function App(): JSX.Element {
                               {row.label}
                               {row.running && <span className="badge-running">运行中</span>}
                               {row.count > 0 && (
-                                <span className="badge-detected">划过 {row.count} 次</span>
+                                <span className="badge-detected">用过 {row.count} 次</span>
                               )}
                             </span>
                             <span className="app-exe">
@@ -1038,7 +1038,11 @@ export function App(): JSX.Element {
                             </span>
                           </span>
                           <span className="app-meta">
-                            {row.lastSeen ? relativeTime(row.lastSeen) : row.installed ? '已安装' : ''}
+                            {row.lastSeen
+                              ? `上次使用：${relativeTime(row.lastSeen)}`
+                              : row.installed
+                                ? '已安装'
+                                : ''}
                           </span>
                         </label>
                       </li>
@@ -1508,20 +1512,6 @@ export function App(): JSX.Element {
                   <h1>注解提示词</h1>
                   <p>作为系统提示词发送给模型；选中的文字会作为用户消息附在后面。</p>
                 </div>
-                <div className="head-actions">
-                  <button
-                    className="ghost"
-                    onClick={() => {
-                      setPromptDraft(DEFAULT_PROMPT)
-                      setPromptDirty(true)
-                    }}
-                  >
-                    恢复默认
-                  </button>
-                  <button className="primary" disabled={!promptDirty} onClick={() => void savePrompt()}>
-                    保存
-                  </button>
-                </div>
               </header>
 
               <div className="notice-card">
@@ -1541,6 +1531,45 @@ export function App(): JSX.Element {
                 >
                   套用模板
                 </button>
+              </div>
+
+              <div className="panel-card">
+                <div className="card-head">
+                  <h2>系统提示词</h2>
+                  <span className="muted">{promptDraft.length} 字</span>
+                </div>
+                <textarea
+                  className="prompt-box"
+                  value={promptDraft}
+                  onChange={(event) => {
+                    setPromptDraft(event.target.value)
+                    setPromptDirty(true)
+                  }}
+                  spellCheck={false}
+                />
+                <div className="prompt-foot">
+                  <span className="muted">
+                    建议保留“Markdown / 300 字以内”之类的约束，面板显示更稳定。
+                  </span>
+                  <div className="head-actions">
+                    <button
+                      className="ghost"
+                      onClick={() => {
+                        setPromptDraft(DEFAULT_PROMPT)
+                        setPromptDirty(true)
+                      }}
+                    >
+                      恢复默认
+                    </button>
+                    <button
+                      className="primary"
+                      disabled={!promptDirty}
+                      onClick={() => void savePrompt()}
+                    >
+                      保存
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className="panel-card">
@@ -1621,21 +1650,6 @@ export function App(): JSX.Element {
                 </div>
               </div>
 
-              <div className="panel-card">
-                <textarea
-                  className="prompt-box"
-                  value={promptDraft}
-                  onChange={(event) => {
-                    setPromptDraft(event.target.value)
-                    setPromptDirty(true)
-                  }}
-                  spellCheck={false}
-                />
-                <div className="prompt-foot">
-                  <span className="muted">{promptDraft.length} 字</span>
-                  <span className="muted">建议保留“Markdown / 300 字以内”之类的约束，面板显示更稳定。</span>
-                </div>
-              </div>
             </section>
           )}
 
@@ -1936,7 +1950,7 @@ export function App(): JSX.Element {
                     <div className="stat">
                       <span>使用模型</span>
                       <strong>{usage.byModel.length}</strong>
-                      <small>{usage.byApp.length} 个应用</small>
+                      <small>覆盖 {usage.byApp.length} 个应用</small>
                     </div>
                   </div>
 
@@ -1972,7 +1986,7 @@ export function App(): JSX.Element {
                       <div className="card-head">
                         <h2>按模型</h2>
                       </div>
-                      <table className="data-table">
+                      <table className="data-table numeric-3">
                         <thead>
                           <tr>
                             <th>模型</th>
@@ -1998,7 +2012,7 @@ export function App(): JSX.Element {
                       <div className="card-head">
                         <h2>按应用</h2>
                       </div>
-                      <table className="data-table">
+                      <table className="data-table numeric-3">
                         <thead>
                           <tr>
                             <th>应用</th>
