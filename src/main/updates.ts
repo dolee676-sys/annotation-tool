@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { app, net } from 'electron'
 import { execFile, spawn } from 'node:child_process'
 import {
   createWriteStream,
@@ -11,7 +11,7 @@ import {
 import { basename, dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import type { UpdateStatus } from '../shared/types'
-import { isNewerVersion } from '../shared/version'
+import { isNewerVersion, parseReleaseVersion } from '../shared/version'
 import { APPLY_SCRIPT } from './applyUpdateScript'
 import { parseApplyResult, parseChecksum, verifyDownloadedFile } from './updateSafety'
 
@@ -30,6 +30,28 @@ function psQuote(value: string): string {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+async function httpFetch(url: string, init: RequestInit): Promise<Response> {
+  if (!app.isReady()) return fetch(url, init)
+  try {
+    // Electron 的网络栈会跟随 Windows 系统代理；Node 的 fetch 不走系统代理。
+    return await net.fetch(url, init)
+  } catch (error) {
+    return fetch(url, init)
+  }
+}
+
+function friendlyCheckError(error: unknown): string {
+  const raw = messageOf(error)
+  if (
+    /fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|network|socket|terminated|aborted/i.test(
+      raw
+    )
+  ) {
+    return '检查更新失败：连不上 GitHub。请检查网络或代理，然后点「检查更新」重试。'
+  }
+  return raw
 }
 
 export interface UpdateManagerOptions {
@@ -78,13 +100,16 @@ export class UpdateManager {
     this.setStatus({ phase: 'checking', currentVersion: this.currentVersion })
 
     try {
-      const latest = await this.fetchLatestVersion()
+      const latest = await this.fetchLatestVersionWithRetry()
       if (!isNewerVersion(latest, this.currentVersion)) {
+        const localAhead = isNewerVersion(this.currentVersion, latest)
         this.setStatus({
           phase: 'latest',
           currentVersion: this.currentVersion,
           latestVersion: latest,
-          message: '已是最新版本'
+          message: localAhead
+            ? `线上最新 v${latest}；当前本地 v${this.currentVersion}（本地构建较新）`
+            : `已是最新版本 v${latest}`
         })
         return this.status
       }
@@ -113,7 +138,7 @@ export class UpdateManager {
         phase: 'error',
         currentVersion: this.currentVersion,
         latestVersion: this.status.latestVersion,
-        message: messageOf(error)
+        message: friendlyCheckError(error)
       })
       return this.status
     } finally {
@@ -240,16 +265,35 @@ export class UpdateManager {
     return null
   }
 
+  private async fetchLatestVersionWithRetry(): Promise<string> {
+    let lastError: unknown
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await this.fetchLatestVersion()
+      } catch (error) {
+        lastError = error
+        if (attempt === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 1200))
+        }
+      }
+    }
+    throw lastError
+  }
+
   private async fetchLatestVersion(): Promise<string> {
-    const res = await fetch(LATEST_URL, {
+    const res = await httpFetch(LATEST_URL, {
       redirect: 'follow',
       headers: { 'User-Agent': USER_AGENT },
       signal: AbortSignal.timeout(15000)
     })
     if (!res.ok) throw new Error(`检查更新失败：GitHub 返回 ${res.status}`)
-    const match = res.url.match(/\/tag\/v?([0-9]+\.[0-9]+\.[0-9]+)(?:$|[?#])/)
-    if (!match) throw new Error('检查更新失败：无法识别最新版本号')
-    return match[1]
+    const fromUrl = parseReleaseVersion(res.url)
+    if (fromUrl) return fromUrl
+    const version = parseReleaseVersion(res.url, await res.text())
+    if (!version) {
+      throw new Error('检查更新失败：无法识别最新版本号，请稍后重试或打开下载页。')
+    }
+    return version
   }
 
   private updateDir(): string {
@@ -261,7 +305,7 @@ export class UpdateManager {
   }
 
   private async fetchChecksum(latest: string): Promise<string> {
-    const res = await fetch(this.assetUrl(latest, CHECKSUM_NAME), {
+    const res = await httpFetch(this.assetUrl(latest, CHECKSUM_NAME), {
       redirect: 'follow',
       headers: { 'User-Agent': USER_AGENT },
       signal: AbortSignal.timeout(15000)
@@ -293,7 +337,7 @@ export class UpdateManager {
     this.onProgress(0, '正在校验发布信息')
 
     const checksum = await this.fetchChecksum(latest)
-    const res = await fetch(this.assetUrl(latest, ASSET_NAME), {
+    const res = await httpFetch(this.assetUrl(latest, ASSET_NAME), {
       redirect: 'follow',
       headers: { 'User-Agent': USER_AGENT },
       signal: AbortSignal.timeout(10 * 60 * 1000)

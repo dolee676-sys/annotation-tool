@@ -63,7 +63,7 @@ const BASE_PRESETS: Array<Omit<ProviderPreset, 'priceIn' | 'priceOut' | 'guide'>
     kind: 'openai',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     local: false,
-    models: ['qwen-plus', 'qwen-max', 'qwen-turbo', 'qwen-long'],
+    models: ['qwen3.8-flash', 'qwen3.7-plus', 'qwen3.8-max', 'qwen3.7-flash'],
     keyUrl: 'https://bailian.console.aliyun.com/',
     keyHint: 'sk-...'
   },
@@ -105,7 +105,7 @@ const BASE_PRESETS: Array<Omit<ProviderPreset, 'priceIn' | 'priceOut' | 'guide'>
 
 const PRESET_PRICES: Record<string, { priceIn: number; priceOut: number }> = {
   deepseek: { priceIn: 2, priceOut: 8 },
-  qwen: { priceIn: 1, priceOut: 3 },
+  qwen: { priceIn: 0.8, priceOut: 2.7 },
   moonshot: { priceIn: 12, priceOut: 12 },
   zhipu: { priceIn: 5, priceOut: 5 },
   openai: { priceIn: 5, priceOut: 20 }
@@ -146,7 +146,7 @@ const PROVIDER_GUIDES: Record<string, ProviderGuide> = {
       '打开阿里云百炼控制台，登录并开通百炼。',
       '创建 API Key，复制保存。',
       '在阿里云费用中心充值，或购买模型资源包。',
-      '回到这里粘贴 Key，选 qwen-plus 等模型，保存并测试。'
+      '回到这里粘贴 Key，日常选 qwen3.8-flash，复杂问题选 qwen3.8-max，保存并测试。'
     ],
     billingUrl: 'https://bailian.console.aliyun.com/',
     billingLabel: '打开百炼控制台',

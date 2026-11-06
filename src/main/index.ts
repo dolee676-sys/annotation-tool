@@ -20,6 +20,7 @@ import { HISTORY_REWRITE_BATCH, HistoryStore } from './history'
 import { buildSystemPrompt, buildUserMessage, markSelection } from './prompt'
 import { estimateCostCny, usageMultiplier } from '../shared/pricing'
 import { isFreeModel } from '../shared/presets'
+import { isChatModel } from '../shared/modelCatalog'
 import { SelectionService, isUsablePoint, toDipPoint, type Point, type RawSelection } from './selection'
 import { isTrustedRendererUrl, rendererFileUrl } from './security'
 import { SettingsStore } from './settings'
@@ -167,10 +168,13 @@ function buildModelOptions(currentProviderId: string, currentModel: string): Pan
   for (const provider of settings.getProvidersView()) {
     if (!isLocalBaseUrl(provider.baseUrl) && !provider.hasKey) continue
     const local = isLocalBaseUrl(provider.baseUrl)
+    const providerKey = provider.presetId ?? provider.id
     for (const model of provider.models) {
+      if (!isChatModel(providerKey, model)) continue
       options.push({
         providerId: provider.id,
         providerName: provider.name,
+        presetId: providerKey,
         model,
         free: isFreeModel(provider.presetId, model, local),
         multiplier: usageMultiplier({
@@ -190,6 +194,7 @@ function buildModelOptions(currentProviderId: string, currentModel: string): Pan
       options.unshift({
         providerId: provider.id,
         providerName: provider.name,
+        presetId: provider.presetId ?? provider.id,
         model: currentModel,
         free: isFreeModel(provider.presetId ?? provider.id, currentModel, local),
         multiplier: usageMultiplier({
@@ -882,8 +887,9 @@ function registerIpc(): void {
     try {
       const models = await listModels(provider, settings.apiKey(provider.id))
       settings.setModels(provider.id, models)
-      if (models.length > 0 && !settings.get().defaultModel) {
-        settings.update({ defaultProviderId: provider.id, defaultModel: models[0] })
+      const sorted = settings.getProvider(provider.id)?.models ?? models
+      if (sorted.length > 0 && !settings.get().defaultModel) {
+        settings.update({ defaultProviderId: provider.id, defaultModel: sorted[0] })
       }
       broadcastState()
       if (!settings.flush()) {

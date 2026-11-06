@@ -17,6 +17,7 @@ import type {
 import { DEFAULT_PROMPT, HISTORY_KEEP_RECENT, HISTORY_LIMIT } from '../../shared/types'
 import { PROVIDER_PRESETS, isLocalAddress, presetById } from '../../shared/presets'
 import { formatCny, formatUsageMultiplier, usageMultiplier } from '../../shared/pricing'
+import { groupQwenModels, modelDisplayName, type ModelGroup } from '../../shared/modelCatalog'
 
 marked.setOptions({ gfm: true, breaks: true })
 
@@ -62,6 +63,12 @@ interface HistoryThread {
   key: string
   items: HistoryRecord[]
   latest: HistoryRecord
+}
+
+const MODEL_GROUP_LABELS: Record<ModelGroup, string> = {
+  recommended: '推荐（按注解/问答效果排序）',
+  text: '其他对话模型',
+  other: '图片 / 语音 / 向量等（不用于文字注解）'
 }
 
 const NAV: Array<{ id: Tab; label: string; icon: string }> = [
@@ -628,6 +635,24 @@ export function App(): JSX.Element {
     setPresetInitialized(true)
   }, [state, presetInitialized, selectPreset])
 
+  const defaultModelKey = state
+    ? `${state.settings.defaultProviderId}::${state.settings.defaultModel}`
+    : ''
+
+  // 面板里切换模型会写回默认设置；这里只跟随默认模型变化，避免覆盖尚未保存的选择。
+  useEffect(() => {
+    if (!state || !selectedPresetId) return
+    const provider = state.providers.find((item) => item.id === state.settings.defaultProviderId)
+    const presetId = provider?.presetId ?? provider?.id
+    if (!presetId || !presetById(presetId)) return
+    if (presetId !== selectedPresetId) {
+      selectPreset(presetId, state)
+      return
+    }
+    const next = state.settings.defaultModel
+    if (next) setModelDraft((current) => (current === next ? current : next))
+  }, [defaultModelKey, selectPreset])
+
   const appRows = useMemo(() => {
     const map = new Map<string, AppRow>()
     for (const entry of apps ?? []) {
@@ -754,6 +779,8 @@ export function App(): JSX.Element {
   const activeChoices = Array.from(
     new Set([...(activeProvider?.models ?? []), ...(activePreset?.models ?? [])])
   )
+  const activeModelGroups =
+    selectedPresetId === 'qwen' ? groupQwenModels(activeChoices) : null
   const activeProviderInfo = state.providers.find(
     (provider) => provider.id === settings.defaultProviderId
   )
@@ -858,7 +885,7 @@ export function App(): JSX.Element {
       if (result.ok) {
         setPresetNotice({
           ok: true,
-          message: `已启用 ${activePreset.name} · ${model}。连接正常，发现 ${result.models.length} 个模型。`
+          message: `已启用 ${activePreset.name} · ${modelDisplayName(activePreset.id, model)}。连接正常，发现 ${result.models.length} 个模型。`
         })
       } else {
         setPresetNotice({
@@ -1103,7 +1130,12 @@ export function App(): JSX.Element {
                   <span className="muted">当前使用</span>
                   <strong>{activeLabel}</strong>
                   <span className="active-model-name">
-                    {settings.defaultModel || '还没有选择模型'}
+                    {settings.defaultModel
+                      ? modelDisplayName(
+                          activeProviderInfo?.presetId ?? activeProviderInfo?.id,
+                          settings.defaultModel
+                        )
+                      : '还没有选择模型'}
                     {settings.defaultModel && <MultiplierBadge value={activeMultiplier} />}
                   </span>
                   {modeMismatch && (
@@ -1222,20 +1254,30 @@ export function App(): JSX.Element {
                           <option value={modelDraft}>{modelDraft}（当前）</option>
                         )}
                         {!modelDraft && <option value="">请选择模型</option>}
-                        {activeChoices.map((model) => (
-                          <option key={model} value={model}>
-                            {model}
-                            {multiplierSuffix(
-                              usageMultiplier({
-                                model,
-                                local: activePreset.local,
-                                fallbackIn: activeProvider.priceIn,
-                                fallbackOut: activeProvider.priceOut,
-                                useFallback: !activeProvider.builtin
-                              })
-                            )}
-                          </option>
-                        ))}
+                        {(() => {
+                          const renderOption = (model: string): JSX.Element => (
+                            <option key={model} value={model}>
+                              {modelDisplayName(selectedPresetId, model)}
+                              {multiplierSuffix(
+                                usageMultiplier({
+                                  model,
+                                  local: activePreset.local,
+                                  fallbackIn: activeProvider.priceIn,
+                                  fallbackOut: activeProvider.priceOut,
+                                  useFallback: !activeProvider.builtin
+                                })
+                              )}
+                            </option>
+                          )
+                          if (!activeModelGroups) return activeChoices.map(renderOption)
+                          return activeModelGroups.map((entry) =>
+                            entry.models.length > 0 ? (
+                              <optgroup key={entry.group} label={MODEL_GROUP_LABELS[entry.group]}>
+                                {entry.models.map(renderOption)}
+                              </optgroup>
+                            ) : null
+                          )
+                        })()}
                       </select>
                     ) : (
                       <div className="model-empty">
@@ -1248,6 +1290,11 @@ export function App(): JSX.Element {
                   <p className="hint">
                     模型旁的倍率以 deepseek-flash 为 1.00×，精确到 0.01×；按每百万 tokens 输入+输出价格估算，数字越小越省，仅用于横向比较，实际费用以用量页为准。
                   </p>
+                  {selectedPresetId === 'qwen' && (
+                    <p className="hint">
+                      百炼返回的图片、语音、向量等不能用于文字对话的模型已自动过滤，列表只保留文字对话模型。
+                    </p>
+                  )}
                   <p className="hint">
                     免费或轻量模型响应快，适合简单注解；复杂提问和连续追问建议选能力更强的模型。
                   </p>
@@ -2143,7 +2190,7 @@ export function App(): JSX.Element {
                   {state.update.phase === 'idle' && '应用会在启动后自动检查 GitHub Releases。'}
                   {state.update.phase === 'checking' && '正在检查更新…'}
                   {state.update.phase === 'latest' &&
-                    `已是最新版本${state.update.latestVersion ? ` v${state.update.latestVersion}` : ''}。`}
+                    `${state.update.message ?? '已是最新版本'}${state.update.message?.includes('。') ? '' : '。'}`}
                   {state.update.phase === 'available' &&
                     `发现新版本 v${state.update.latestVersion ?? ''}。${
                       settings.autoDownloadUpdates ? '正在自动下载…' : '点击「下载更新」后再下载。'
@@ -2152,7 +2199,8 @@ export function App(): JSX.Element {
                     `正在下载 v${state.update.latestVersion ?? ''}（${updateProgress?.progress ?? state.update.progress ?? 0}%）。`}
                   {state.update.phase === 'ready' &&
                     `v${state.update.latestVersion ?? ''} 已下载并通过 SHA-256 校验；重启后替换程序文件，配置和历史会保留。`}
-                  {state.update.phase === 'error' && '更新未完成。'}
+                  {state.update.phase === 'error' &&
+                    (state.update.latestVersion ? '更新未完成。' : '检查更新失败。')}
                 </p>
                 {state.update.phase === 'downloading' && (
                   <div className="update-progress">
@@ -2457,7 +2505,7 @@ function ProviderCard({
               onClick={() => onUseModel(model)}
               title="设为默认模型"
             >
-              {model}
+              {modelDisplayName(provider.presetId ?? provider.id, model)}
               <MultiplierBadge
                 value={usageMultiplier({
                   model,

@@ -10,6 +10,7 @@ import {
   type SettingsView
 } from '../shared/types.ts'
 import { PROVIDER_PRESETS } from '../shared/presets.ts'
+import { isChatModel, sortModelsForProvider } from '../shared/modelCatalog.ts'
 
 export interface StoredProvider {
   id: string
@@ -140,6 +141,28 @@ export class SettingsStore {
           provider.priceOut = preset?.priceOut ?? 0
         }
       }
+      let prunedModels = false
+      for (const provider of merged.providers) {
+        const key = provider.presetId ?? provider.id
+        if (key !== 'qwen' || !Array.isArray(provider.models)) continue
+        const usable = provider.models.filter((model) => isChatModel(key, model))
+        if (usable.length !== provider.models.length) {
+          provider.models = usable
+          prunedModels = true
+        }
+      }
+      if (prunedModels) {
+        const def = merged.providers.find((p) => p.id === merged.defaultProviderId)
+        if (
+          def &&
+          (def.presetId ?? def.id) === 'qwen' &&
+          merged.defaultModel &&
+          !def.models.includes(merged.defaultModel)
+        ) {
+          merged.defaultModel = def.models[0] ?? ''
+        }
+        this.writeNow(merged)
+      }
       const known = new Set(merged.providers.map((p) => p.id))
       for (const p of defaultProviders()) {
         if (!known.has(p.id)) merged.providers.push(p)
@@ -216,7 +239,9 @@ export class SettingsStore {
       name: p.name,
       kind: p.kind,
       baseUrl: p.baseUrl,
-      models: [...p.models],
+      models: sortModelsForProvider(p.presetId ?? p.id, p.models).filter((model) =>
+        isChatModel(p.presetId ?? p.id, model)
+      ),
       hasKey: Boolean(p.keyEnc),
       builtin: p.builtin,
       presetId: p.presetId ?? (PROVIDER_PRESETS.some((preset) => preset.id === p.id) ? p.id : undefined),
@@ -324,7 +349,18 @@ export class SettingsStore {
   setModels(id: string, models: string[]): void {
     const p = this.getProvider(id)
     if (!p) return
-    p.models = Array.from(new Set(models.filter(Boolean))).slice(0, 100)
+    const key = p.presetId ?? p.id
+    const unique = Array.from(new Set(models.filter(Boolean)))
+    p.models = sortModelsForProvider(key, unique)
+      .filter((model) => isChatModel(key, model))
+      .slice(0, 100)
+    if (
+      p.id === this.data.defaultProviderId &&
+      this.data.defaultModel &&
+      !p.models.includes(this.data.defaultModel)
+    ) {
+      this.data.defaultModel = p.models[0] ?? ''
+    }
     this.scheduleSave()
   }
 

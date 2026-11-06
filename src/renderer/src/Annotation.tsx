@@ -3,6 +3,7 @@ import { marked } from 'marked'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PanelDone, PanelInit, PanelMode } from '../../shared/types'
 import { formatCny, formatUsageMultiplier } from '../../shared/pricing'
+import { modelDisplayName } from '../../shared/modelCatalog'
 
 marked.setOptions({ gfm: true, breaks: true })
 
@@ -236,6 +237,7 @@ export function Panel(): JSX.Element {
       string,
       {
         providerId: string
+        providerKey: string
         name: string
         models: Array<{ name: string; free: boolean; multiplier?: number | null }>
       }
@@ -243,6 +245,7 @@ export function Panel(): JSX.Element {
     for (const option of init?.options ?? []) {
       const group = map.get(option.providerId) ?? {
         providerId: option.providerId,
+        providerKey: option.presetId ?? option.providerId,
         name: option.providerName,
         models: []
       }
@@ -261,7 +264,10 @@ export function Panel(): JSX.Element {
   const current =
     init?.options.find((o) => o.providerId === init.providerId && o.model === model) ?? null
   const selectedValue = current ? `${current.providerId}::${current.model}` : ''
-  const lightModel = current?.model === 'glm-4-flash' || current?.model === 'qwen-turbo'
+  const lightModel =
+    current?.model === 'glm-4-flash' ||
+    current?.model === 'qwen-turbo' ||
+    (current?.multiplier != null && current.multiplier > 0 && current.multiplier <= 0.5)
 
   const busy =
     initialStatus === 'waiting' ||
@@ -367,7 +373,7 @@ export function Panel(): JSX.Element {
                 void window.zhujie.panelSwitchModel({ providerId, model: nextModel })
               }
             }}
-            title="切换模型"
+            title="切换模型（同时设为默认）"
           >
             {!selectedValue && <option value="">选择模型</option>}
             {groups.map((group) => (
@@ -377,7 +383,7 @@ export function Panel(): JSX.Element {
                     key={`${group.providerId}::${item.name}`}
                     value={`${group.providerId}::${item.name}`}
                   >
-                    {item.name}
+                    {modelDisplayName(group.providerKey, item.name)}
                     {item.free || item.multiplier === 0
                       ? '（免费）'
                       : item.multiplier != null
@@ -599,7 +605,7 @@ export function Panel(): JSX.Element {
         {lightModel && (
           <span
             className="model-hint"
-            title="这是轻量模型，复杂提问建议在顶部切换到 glm-4-plus、DeepSeek 等更强的模型"
+            title="这是轻量模型，复杂提问建议在顶部切换到 qwen3.8-max、DeepSeek V4 Pro 等更强的模型"
           >
             轻量模型
           </span>

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
@@ -24,6 +24,47 @@ test('设置写入失败时返回 false 并保留错误信息', () => {
     mkdirSync(file)
     assert.equal(store.flush(), false)
     assert.ok(store.getLastWriteError())
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('百炼模型列表会删除不能文字对话的模型', () => {
+  const dir = tempDir()
+  try {
+    const store = new SettingsStore(dir)
+    store.setModels('qwen', [
+      'qwen3.8-flash',
+      'qwen-image-3.0',
+      'qwen-audio-3.0-asr-flash',
+      'deepseek-v4-pro',
+      'kimi-k3'
+    ])
+    assert.deepEqual(store.getProvider('qwen')?.models, [
+      'qwen3.8-flash',
+      'deepseek-v4-pro',
+      'kimi-k3'
+    ])
+    assert.equal(store.flush(), true)
+
+    const file = join(dir, 'settings.json')
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as {
+      providers: Array<{ id: string; models: string[] }>
+    }
+    const qwen = raw.providers.find((provider) => provider.id === 'qwen')
+    assert.ok(qwen)
+    qwen.models = ['qwen3.8-flash', 'qwen-image-3.0', 'qwen3.5-ocr']
+    writeFileSync(file, JSON.stringify(raw), 'utf8')
+
+    const reopened = new SettingsStore(dir)
+    assert.deepEqual(reopened.getProvider('qwen')?.models, ['qwen3.8-flash'])
+    const persisted = JSON.parse(readFileSync(file, 'utf8')) as {
+      providers: Array<{ id: string; models: string[] }>
+    }
+    assert.deepEqual(
+      persisted.providers.find((provider) => provider.id === 'qwen')?.models,
+      ['qwen3.8-flash']
+    )
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

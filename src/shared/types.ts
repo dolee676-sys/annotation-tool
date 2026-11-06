@@ -126,6 +126,7 @@ export interface UsageSummary {
 export interface PanelModelOption {
   providerId: string
   providerName: string
+  presetId?: string
   model: string
   free?: boolean
   multiplier?: number | null

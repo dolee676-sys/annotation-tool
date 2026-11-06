@@ -11,7 +11,14 @@ import { isTrustedRendererUrl } from '../src/main/security.ts'
 import { summarizeUsage } from '../src/main/usageSummary.ts'
 import { isFreeModel, presetById } from '../src/shared/presets.ts'
 import { estimateCostCny, formatCny, formatUsageMultiplier, priceForModel, usageMultiplier } from '../src/shared/pricing.ts'
-import { isNewerVersion } from '../src/shared/version.ts'
+import {
+  groupQwenModels,
+  isBailianThirdPartyModel,
+  isChatModel,
+  modelDisplayName,
+  sortModelsForProvider
+} from '../src/shared/modelCatalog.ts'
+import { isNewerVersion, parseReleaseVersion } from '../src/shared/version.ts'
 import {
   checksumMatches,
   parseApplyResult,
@@ -94,6 +101,95 @@ test('消耗倍率以 deepseek-flash 为 1×，并覆盖本机/免费/自定义�
   assert.equal(formatUsageMultiplier(0.001), '<0.01×')
   assert.equal(formatUsageMultiplier(12.4), '12.40×')
   assert.equal(formatUsageMultiplier(null), '—')
+})
+
+test('百炼模型按注解效果排序，并把图片/语音/向量类放到最后', () => {
+  const models = [
+    'qwen-image-2.1-pro',
+    'qwen3.8-max',
+    'qwen3.7-flash-2026-07-15',
+    'test-sre-gpu-auto-handle',
+    'qwen3.8-flash',
+    'qwen3.7-flash',
+    'qwen-audio-3.0-asr-flash',
+    'glm-5.3',
+    'qwen3.6-plus'
+  ]
+  const sorted = sortModelsForProvider('qwen', models)
+  assert.equal(sorted[0], 'qwen3.8-flash')
+  assert.equal(sorted[1], 'qwen3.8-max')
+  assert.ok(sorted.indexOf('qwen3.6-plus') < sorted.indexOf('qwen-image-2.1-pro'))
+  assert.ok(sorted.indexOf('qwen3.6-plus') < sorted.indexOf('qwen-audio-3.0-asr-flash'))
+  assert.ok(sorted.indexOf('qwen3.7-flash') < sorted.indexOf('qwen3.7-flash-2026-07-15'))
+
+  const groups = groupQwenModels(models)
+  assert.deepEqual(
+    groups.map((entry) => entry.group),
+    ['recommended', 'text', 'other']
+  )
+  assert.ok(groups[0].models.includes('qwen3.8-flash'))
+  assert.ok(groups[1].models.includes('qwen3.6-plus'))
+  assert.ok(groups[2].models.includes('qwen-image-2.1-pro'))
+  assert.equal(isChatModel('qwen', 'qwen3.8-flash'), true)
+  assert.equal(isChatModel('qwen', 'qwen-image-2.1-pro'), false)
+  assert.equal(isChatModel('deepseek', 'deepseek-flash'), true)
+  assert.deepEqual(sortModelsForProvider('deepseek', ['b', 'a']), ['b', 'a'])
+})
+
+test('百炼当前文本模型价格与倍率', () => {
+  assert.deepEqual(priceForModel('qwen3.8-flash'), { in: 0.8, out: 2.7 })
+  assert.equal(usageMultiplier({ model: 'qwen3.8-flash' }), 0.35)
+  assert.equal(usageMultiplier({ model: 'qwen3.7-plus' }), 1)
+  assert.equal(usageMultiplier({ model: 'qwen3.8-max' }), 4.8)
+  assert.equal(usageMultiplier({ model: 'qwen3.8-max-0902' }), 4.8)
+  assert.equal(usageMultiplier({ model: 'qwen3.7-max-preview' }), 4.8)
+  assert.equal(usageMultiplier({ model: 'ZHIPU/GLM-5.3-Flash' }), 0.36)
+  assert.equal(usageMultiplier({ model: 'qwen3.7-flash' }), 0.1)
+  assert.equal(usageMultiplier({ model: 'qwen3.7-flash-2026-07-15' }), 0.1)
+  assert.ok(Math.abs((usageMultiplier({ model: 'qwen3.6-flash' }) ?? 0) - 0.84) < 0.0001)
+  assert.ok(Math.abs((usageMultiplier({ model: 'qwen3.5-plus' }) ?? 0) - 0.56) < 0.0001)
+  assert.equal(usageMultiplier({ model: 'deepseek-v4.1-flash' }), 1)
+  assert.equal(usageMultiplier({ model: 'kimi/kimi-k3' }), 12)
+  // 高价变体不套基础价，避免倍率被低估。
+  assert.equal(usageMultiplier({ model: 'glm-5.3-prime' }), null)
+  assert.equal(usageMultiplier({ model: 'kimi/kimi-k3.1-pro' }), null)
+})
+
+test('百炼托管的第三方模型显示“百炼版”，但不改动真实模型名', () => {
+  assert.equal(modelDisplayName('qwen', 'deepseek-v4-pro'), 'deepseek-v4-pro · 百炼版')
+  assert.equal(modelDisplayName('qwen', 'vanchin/deepseek-v4.1-flash'), 'vanchin/deepseek-v4.1-flash · 百炼版')
+  assert.equal(modelDisplayName('qwen', 'ZHIPU/GLM-5.3-Flash'), 'ZHIPU/GLM-5.3-Flash · 百炼版')
+  assert.equal(modelDisplayName('qwen', 'kimi/kimi-k3.1-pro'), 'kimi/kimi-k3.1-pro · 百炼版')
+  assert.equal(modelDisplayName('qwen', 'MiniMax/MiniMax-M3'), 'MiniMax/MiniMax-M3 · 百炼版')
+  assert.equal(modelDisplayName('qwen', 'stepfun/step-5-preview'), 'stepfun/step-5-preview · 百炼版')
+  assert.equal(modelDisplayName('qwen', 'qwen3.8-flash'), 'qwen3.8-flash')
+  assert.equal(modelDisplayName('qwen', 'cmaas-qwen3.8-flash'), 'cmaas-qwen3.8-flash')
+  assert.equal(modelDisplayName('qwen', 'qwen-image-3.0'), 'qwen-image-3.0')
+  assert.equal(modelDisplayName('deepseek', 'deepseek-v4-pro'), 'deepseek-v4-pro')
+  assert.equal(isBailianThirdPartyModel('deepseek-v4-pro'), true)
+  assert.equal(isBailianThirdPartyModel('qwen3.8-flash'), false)
+})
+
+test('能从 GitHub 重定向地址或发布页标题识别版本号', () => {
+  assert.equal(
+    parseReleaseVersion('https://github.com/x/y/releases/tag/v0.1.21'),
+    '0.1.21'
+  )
+  assert.equal(
+    parseReleaseVersion(
+      'https://github.com/x/y/releases/latest',
+      '<title>Release 注解 v0.1.21 · GitHub</title>'
+    ),
+    '0.1.21'
+  )
+  assert.equal(
+    parseReleaseVersion('', '<a href="/x/y/releases/tag/v0.1.20">'),
+    '0.1.20'
+  )
+  assert.equal(
+    parseReleaseVersion('https://github.com/x/y/releases/latest', '<title>没有版本号</title>'),
+    null
+  )
 })
 
 test('免费模型标识只覆盖本机模型与明确免费的云端模型', () => {
