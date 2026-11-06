@@ -11,6 +11,7 @@ import {
 } from '../shared/types.ts'
 import { PROVIDER_PRESETS } from '../shared/presets.ts'
 import { isChatModel, sortModelsForProvider } from '../shared/modelCatalog.ts'
+import type { AnswerLanguageSetting, LanguageSetting } from '../shared/i18n.ts'
 
 export interface StoredProvider {
   id: string
@@ -26,6 +27,8 @@ export interface StoredProvider {
 }
 
 export interface StoredSettings {
+  language: LanguageSetting
+  answerLanguage: AnswerLanguageSetting
   enabled: boolean
   localOnly: boolean
   filterMode: 'all' | 'whitelist'
@@ -81,6 +84,8 @@ function defaultProviders(): StoredProvider[] {
 
 function defaults(): StoredSettings {
   return {
+    language: 'system',
+    answerLanguage: 'auto',
     enabled: true,
     localOnly: true,
     filterMode: 'all',
@@ -134,6 +139,8 @@ export class SettingsStore {
     try {
       const raw = JSON.parse(readFileSync(file, 'utf8')) as Partial<StoredSettings>
       const merged: StoredSettings = { ...defaults(), ...raw }
+      if (!raw.language) merged.language = 'zh-CN'
+      if (!raw.answerLanguage) merged.answerLanguage = 'auto'
       for (const provider of merged.providers) {
         if (typeof provider.priceIn !== 'number' || typeof provider.priceOut !== 'number') {
           const preset = PROVIDER_PRESETS.find((item) => item.id === provider.id)
@@ -266,6 +273,16 @@ export class SettingsStore {
 
   update(patch: SettingsPatch): StoredSettings {
     const next = { ...this.data }
+    if (patch.language === 'system' || patch.language === 'zh-CN' || patch.language === 'en-US') {
+      next.language = patch.language
+    }
+    if (
+      patch.answerLanguage === 'auto' ||
+      patch.answerLanguage === 'zh-CN' ||
+      patch.answerLanguage === 'en-US'
+    ) {
+      next.answerLanguage = patch.answerLanguage
+    }
     if (typeof patch.enabled === 'boolean') next.enabled = patch.enabled
     if (typeof patch.localOnly === 'boolean') next.localOnly = patch.localOnly
     if (patch.filterMode === 'all' || patch.filterMode === 'whitelist') next.filterMode = patch.filterMode

@@ -1,4 +1,5 @@
 import type { ProviderKind } from './types'
+import type { Locale } from './i18n'
 
 export interface ProviderGuide {
   steps: string[]
@@ -10,7 +11,9 @@ export interface ProviderGuide {
 export interface ProviderPreset {
   id: string
   name: string
+  nameEn: string
   tagline: string
+  taglineEn: string
   kind: ProviderKind
   baseUrl: string
   local: boolean
@@ -22,13 +25,16 @@ export interface ProviderPreset {
   free?: boolean
   freeModels?: string[]
   guide: ProviderGuide
+  guideEn: ProviderGuide
 }
 
-const BASE_PRESETS: Array<Omit<ProviderPreset, 'priceIn' | 'priceOut' | 'guide'>> = [
+const BASE_PRESETS: Array<Omit<ProviderPreset, 'priceIn' | 'priceOut' | 'guide' | 'guideEn'>> = [
   {
     id: 'ollama',
     name: 'Ollama',
+    nameEn: 'Ollama',
     tagline: '本机运行 · 免费 · 不联网',
+    taglineEn: 'Local · free · offline',
     kind: 'ollama',
     baseUrl: 'http://127.0.0.1:11434',
     local: true,
@@ -38,7 +44,9 @@ const BASE_PRESETS: Array<Omit<ProviderPreset, 'priceIn' | 'priceOut' | 'guide'>
   {
     id: 'lmstudio',
     name: 'LM Studio',
+    nameEn: 'LM Studio',
     tagline: '本机运行 · 免费 · 不联网',
+    taglineEn: 'Local · free · offline',
     kind: 'openai',
     baseUrl: 'http://127.0.0.1:1234/v1',
     local: true,
@@ -48,7 +56,9 @@ const BASE_PRESETS: Array<Omit<ProviderPreset, 'priceIn' | 'priceOut' | 'guide'>
   {
     id: 'deepseek',
     name: 'DeepSeek',
+    nameEn: 'DeepSeek',
     tagline: '便宜 · 中文好',
+    taglineEn: 'Low cost · strong Chinese',
     kind: 'openai',
     baseUrl: 'https://api.deepseek.com/v1',
     local: false,
@@ -59,7 +69,9 @@ const BASE_PRESETS: Array<Omit<ProviderPreset, 'priceIn' | 'priceOut' | 'guide'>
   {
     id: 'qwen',
     name: '通义千问',
+    nameEn: 'Qwen (Bailian)',
     tagline: '阿里云百炼',
+    taglineEn: 'Alibaba Cloud Bailian',
     kind: 'openai',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     local: false,
@@ -70,7 +82,9 @@ const BASE_PRESETS: Array<Omit<ProviderPreset, 'priceIn' | 'priceOut' | 'guide'>
   {
     id: 'moonshot',
     name: 'Kimi',
+    nameEn: 'Kimi',
     tagline: '月之暗面',
+    taglineEn: 'Moonshot AI',
     kind: 'openai',
     baseUrl: 'https://api.moonshot.cn/v1',
     local: false,
@@ -81,7 +95,9 @@ const BASE_PRESETS: Array<Omit<ProviderPreset, 'priceIn' | 'priceOut' | 'guide'>
   {
     id: 'zhipu',
     name: '智谱 GLM',
+    nameEn: 'Zhipu GLM',
     tagline: '国产 · 有免费额度',
+    taglineEn: 'China · free tier',
     kind: 'openai',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     local: false,
@@ -93,7 +109,9 @@ const BASE_PRESETS: Array<Omit<ProviderPreset, 'priceIn' | 'priceOut' | 'guide'>
   {
     id: 'openai',
     name: 'OpenAI',
+    nameEn: 'OpenAI',
     tagline: 'GPT 系列',
+    taglineEn: 'GPT models',
     kind: 'openai',
     baseUrl: 'https://api.openai.com/v1',
     local: false,
@@ -187,11 +205,88 @@ const PROVIDER_GUIDES: Record<string, ProviderGuide> = {
   }
 }
 
+const PROVIDER_GUIDES_EN: Record<string, ProviderGuide> = {
+  ollama: {
+    steps: [
+      'Download and install Ollama from ollama.com/download.',
+      'In a terminal, run `ollama pull qwen2.5:7b` (or another model).',
+      'Make sure Ollama is running. The default endpoint is http://127.0.0.1:11434.',
+      'Return here, click "Detect local models", choose a model, and save.'
+    ],
+    note: 'Local models are free and are not billed per token. Larger models use more RAM/VRAM.'
+  },
+  lmstudio: {
+    steps: [
+      'Download and install LM Studio from lmstudio.ai.',
+      'In Discover, search for and download a model.',
+      'Open Developer and start the local server (default port 1234).',
+      'Return here, click "Detect local models", choose a model, and save.'
+    ],
+    note: 'Local models are free and are not billed per token. Download the model files first.'
+  },
+  deepseek: {
+    steps: [
+      'Open platform.deepseek.com, sign up, and complete identity verification.',
+      'Create an API key under API Keys and copy it immediately (it is shown once).',
+      'Top up with Alipay/WeChat on the Top up page; API usage is billed per token.',
+      'Return here, paste the key, choose deepseek-flash or deepseek-v4-pro, then save and test.'
+    ],
+    billingUrl: 'https://platform.deepseek.com/',
+    billingLabel: 'Open console to top up',
+    note: 'Insufficient balance usually returns 402. A small top-up is enough for a long trial.'
+  },
+  qwen: {
+    steps: [
+      'Open the Alibaba Cloud Bailian console, sign in, and activate Bailian.',
+      'Create an API key and copy it.',
+      'Top up in the Alibaba Cloud billing center, or buy a model resource package.',
+      'Return here, paste the key, choose qwen3.8-flash for everyday use or qwen3.8-max for complex questions, then save and test.'
+    ],
+    billingUrl: 'https://bailian.console.aliyun.com/',
+    billingLabel: 'Open Bailian console',
+    note: 'New users usually have free quota; check the console for the current limits.'
+  },
+  moonshot: {
+    steps: [
+      'Open platform.moonshot.cn, sign up, and complete personal verification.',
+      'Create an API key on the API Key page and copy it.',
+      'Top up with WeChat/Alipay; new users usually get free trial quota.',
+      'Return here, paste the key, choose moonshot-v1-8k or another model, then save and test.'
+    ],
+    billingUrl: 'https://platform.moonshot.cn/',
+    billingLabel: 'Open Kimi console',
+    note: 'After the free quota, usage is billed per token; input and output are priced separately.'
+  },
+  zhipu: {
+    steps: [
+      'Open open.bigmodel.cn, sign up, and complete verification.',
+      'Create an API key in API Key management and copy it.',
+      'Buy a resource package or top up; glm-4-flash usually has free quota.',
+      'Return here, paste the key, choose glm-4-plus / glm-4-air / glm-4-flash, then save and test.'
+    ],
+    billingUrl: 'https://open.bigmodel.cn/',
+    billingLabel: 'Open Zhipu console',
+    note: 'Free quota is limited. Use a stronger model such as glm-4-plus for complex questions.'
+  },
+  openai: {
+    steps: [
+      'Open platform.openai.com, sign up, and set up billing.',
+      'Create an API key and copy it.',
+      'Add a payment method and top up (usually requires an international payment method).',
+      'Return here, paste the key, choose gpt-4o-mini or another model, then save and test.'
+    ],
+    billingUrl: 'https://platform.openai.com/settings/organization/billing/overview',
+    billingLabel: 'Open OpenAI billing',
+    note: 'Mainland China may not be able to pay directly; use an OpenAI-compatible relay instead.'
+  }
+}
+
 export const PROVIDER_PRESETS: ProviderPreset[] = BASE_PRESETS.map((preset) => ({
   ...preset,
   priceIn: PRESET_PRICES[preset.id]?.priceIn ?? 0,
   priceOut: PRESET_PRICES[preset.id]?.priceOut ?? 0,
-  guide: PROVIDER_GUIDES[preset.id] ?? { steps: [] }
+  guide: PROVIDER_GUIDES[preset.id] ?? { steps: [] },
+  guideEn: PROVIDER_GUIDES_EN[preset.id] ?? { steps: [] }
 }))
 
 export function presetById(id: string): ProviderPreset | undefined {
@@ -206,6 +301,27 @@ export function isLocalAddress(baseUrl: string): boolean {
   } catch {
     return false
   }
+}
+
+export function presetName(preset: ProviderPreset, locale: Locale): string {
+  return locale === 'en-US' ? preset.nameEn : preset.name
+}
+
+export function presetTagline(preset: ProviderPreset, locale: Locale): string {
+  return locale === 'en-US' ? preset.taglineEn : preset.tagline
+}
+
+export function presetGuide(preset: ProviderPreset, locale: Locale): ProviderGuide {
+  return locale === 'en-US' ? preset.guideEn : preset.guide
+}
+
+export function presetDisplayName(
+  presetId: string | undefined,
+  fallback: string,
+  locale: Locale
+): string {
+  const preset = presetId ? presetById(presetId) : undefined
+  return preset ? presetName(preset, locale) : fallback
 }
 
 export function isFreeModel(presetId: string | undefined, model: string, local: boolean): boolean {

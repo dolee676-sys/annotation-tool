@@ -4,14 +4,21 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PanelDone, PanelInit, PanelMode } from '../../shared/types'
 import { formatCny, formatUsageMultiplier } from '../../shared/pricing'
 import { modelDisplayName } from '../../shared/modelCatalog'
+import { translate, type Locale } from '../../shared/i18n'
+import { presetDisplayName } from '../../shared/presets'
 
 marked.setOptions({ gfm: true, breaks: true })
 
 export function Chip(): JSX.Element {
   const [busy, setBusy] = useState<'annotate' | 'ask' | null>(null)
   const [appearId, setAppearId] = useState(0)
+  const [locale, setLocale] = useState<Locale>('zh-CN')
+  const t = (key: string): string => translate(locale, key)
 
-  useEffect(() => window.zhujie.onAppear(() => setAppearId((value) => value + 1)), [])
+  useEffect(() => {
+    void window.zhujie.getLocale().then(setLocale)
+    return window.zhujie.onAppear(() => setAppearId((value) => value + 1))
+  }, [])
 
   const trigger = (action: 'annotate' | 'ask'): void => {
     if (busy) return
@@ -24,8 +31,8 @@ export function Chip(): JSX.Element {
       <div className={busy ? 'chip-shell busy' : 'chip-shell'}>
         <button
           className="chip-half left"
-          title="AI 注解这段文字"
-          aria-label="注解"
+          title={t('AI 注解这段文字')}
+          aria-label={t('注解')}
           disabled={Boolean(busy)}
           onClick={() => trigger('annotate')}
         >
@@ -33,8 +40,8 @@ export function Chip(): JSX.Element {
         </button>
         <button
           className="chip-half right"
-          title="就这段文字向 AI 提问"
-          aria-label="提问"
+          title={t('就这段文字向 AI 提问')}
+          aria-label={t('提问')}
           disabled={Boolean(busy)}
           onClick={() => trigger('ask')}
         >
@@ -232,6 +239,10 @@ export function Panel(): JSX.Element {
     if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
   }, [initialAnswer, followUps])
 
+  const locale: Locale = init?.locale ?? 'zh-CN'
+  const t = (key: string, params?: Record<string, string | number>): string =>
+    translate(locale, key, params)
+
   const groups = useMemo(() => {
     const map = new Map<
       string,
@@ -246,7 +257,11 @@ export function Panel(): JSX.Element {
       const group = map.get(option.providerId) ?? {
         providerId: option.providerId,
         providerKey: option.presetId ?? option.providerId,
-        name: option.providerName,
+        name: presetDisplayName(
+          option.presetId ?? option.providerId,
+          option.providerName,
+          locale
+        ),
         models: []
       }
       if (!group.models.some((item) => item.name === option.model)) {
@@ -259,7 +274,7 @@ export function Panel(): JSX.Element {
       map.set(option.providerId, group)
     }
     return Array.from(map.values())
-  }, [init])
+  }, [init, locale])
 
   const current =
     init?.options.find((o) => o.providerId === init.providerId && o.model === model) ?? null
@@ -289,7 +304,7 @@ export function Panel(): JSX.Element {
     try {
       const result = await window.zhujie.panelFavorite()
       if (result.ok) setFavorited(result.favorited)
-      else setFavoriteError(result.error ?? '收藏失败')
+      else setFavoriteError(result.error ?? t('收藏失败'))
     } finally {
       setFavoriteBusy(false)
     }
@@ -325,30 +340,30 @@ export function Panel(): JSX.Element {
   }
 
   const placeholder = contextPending
-    ? '正在读取上下文…'
+    ? t('正在读取上下文…')
     : !canAsk
       ? mode === 'annotate' && (initialStatus === 'waiting' || initialStatus === 'streaming')
-        ? '注解完成后可以继续提问…'
-        : '回答中…'
+        ? t('注解完成后可以继续提问…')
+        : t('回答中…')
       : mode === 'annotate'
-        ? '对这段内容继续提问…'
+        ? t('对这段内容继续提问…')
         : followUps.length > 0
-          ? '继续问这段文字…'
-          : '想问这段文字什么？'
+          ? t('继续问这段文字…')
+          : t('想问这段文字什么？')
 
   const footerStatus = contextPending
-    ? '正在读取上下文'
+    ? t('正在读取上下文')
     : busy
       ? initialStatus === 'waiting' && followUps.length === 0
-        ? '正在解析'
-        : '正在回答'
+        ? t('正在解析')
+        : t('正在回答')
       : latestStatus === 'done'
-        ? '已记录用量'
+        ? t('已记录用量')
         : latestStatus === 'error'
-          ? '未完成'
+          ? t('未完成')
           : mode === 'ask' && followUps.length === 0
-            ? '等你提问'
-            : '准备中'
+            ? t('等你提问')
+            : t('准备中')
 
   return (
     <div className="panel">
@@ -356,9 +371,11 @@ export function Panel(): JSX.Element {
         <div className="panel-title">
           <span className={mode === 'ask' ? 'panel-mark ask' : 'panel-mark'} aria-hidden="true" />
           <div>
-            <strong>{mode === 'ask' ? '提问' : '注解'}</strong>
+            <strong>{mode === 'ask' ? t('提问') : t('注解')}</strong>
             <span className="panel-source">
-              {init?.programName ? `来自 ${init.programName}` : 'AI 解析'}
+              {init?.programName
+                ? t('来自 {name}', { name: init.programName })
+                : t('AI 解析')}
             </span>
           </div>
         </div>
@@ -373,9 +390,9 @@ export function Panel(): JSX.Element {
                 void window.zhujie.panelSwitchModel({ providerId, model: nextModel })
               }
             }}
-            title="切换模型（同时设为默认）"
+            title={t('切换模型（同时设为默认）')}
           >
-            {!selectedValue && <option value="">选择模型</option>}
+            {!selectedValue && <option value="">{t('选择模型')}</option>}
             {groups.map((group) => (
               <optgroup key={group.providerId} label={group.name}>
                 {group.models.map((item) => (
@@ -385,7 +402,7 @@ export function Panel(): JSX.Element {
                   >
                     {modelDisplayName(group.providerKey, item.name)}
                     {item.free || item.multiplier === 0
-                      ? '（免费）'
+                      ? t('（免费）')
                       : item.multiplier != null
                         ? `（${formatUsageMultiplier(item.multiplier)}）`
                         : ''}
@@ -396,7 +413,7 @@ export function Panel(): JSX.Element {
           </select>
           <button
             className={favorited ? 'icon-btn star active' : 'icon-btn star'}
-            title={favorited ? '取消收藏' : '收藏当前问答'}
+            title={favorited ? t('取消收藏') : t('收藏当前问答')}
             disabled={!canFavorite || favoriteBusy}
             onClick={() => void toggleFavorite()}
           >
@@ -412,7 +429,7 @@ export function Panel(): JSX.Element {
           </button>
           <button
             className={pinnedOpen ? 'icon-btn pin active' : 'icon-btn pin'}
-            title={pinnedOpen ? '取消钉住，点外部可关闭' : '钉在当前屏幕上'}
+            title={pinnedOpen ? t('取消钉住，点外部可关闭') : t('钉在当前屏幕上')}
             onClick={togglePin}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -424,10 +441,10 @@ export function Panel(): JSX.Element {
             className="icon-btn"
             title={
               mode === 'ask'
-                ? '提问模式请直接重新提问'
+                ? t('提问模式请直接重新提问')
                 : followUps.length > 0
-                  ? '重新生成注解（会清空追问）'
-                  : '重新生成注解'
+                  ? t('重新生成注解（会清空追问）')
+                  : t('重新生成注解')
             }
             disabled={mode === 'ask' || busy}
             onClick={() => void window.zhujie.panelRegenerate()}
@@ -437,7 +454,7 @@ export function Panel(): JSX.Element {
               <path d="M20 4v7h-7" />
             </svg>
           </button>
-          <button className="icon-btn" title={copied ? '已复制' : '复制内容'} onClick={() => void copy()}>
+          <button className="icon-btn" title={copied ? t('已复制') : t('复制内容')} onClick={() => void copy()}>
             {copied ? (
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M5 12.5l4 4L19 7" />
@@ -449,7 +466,7 @@ export function Panel(): JSX.Element {
               </svg>
             )}
           </button>
-          <button className="icon-btn close" title="关闭" onClick={() => void window.zhujie.panelClose()}>
+          <button className="icon-btn close" title={t('关闭')} onClick={() => void window.zhujie.panelClose()}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
               <path d="M6 6l12 12M18 6L6 18" />
             </svg>
@@ -459,15 +476,15 @@ export function Panel(): JSX.Element {
 
       <div className="quote" title={init?.text ?? ''}>
         <div className="quote-label">
-          选中的文字
+          {t('选中的文字')}
           {init?.contextPending ? (
-            ' · 正在读取上下文…'
+            t(' · 正在读取上下文…')
           ) : init && init.contextChars > 0 ? (
-            ' · 已结合上下文'
+            t(' · 已结合上下文')
           ) : init?.contextEnabled ? (
-            <span title="当前应用没有向系统暴露可选文本，本次只发送选中文字">
+            <span title={t('当前应用没有向系统暴露可选文本，本次只发送选中文字')}>
               {' '}
-              · 未读取到上下文
+              {t(' · 未读取到上下文')}
             </span>
           ) : (
             ''
@@ -475,7 +492,7 @@ export function Panel(): JSX.Element {
           {init?.truncated && (
             <span className="quote-warn">
               {' '}
-              · 已截断，仅发送前 {init.maxChars} 字
+              {t(' · 已截断，仅发送前 {count} 字', { count: init.maxChars })}
             </span>
           )}
         </div>
@@ -492,13 +509,13 @@ export function Panel(): JSX.Element {
         }}
       >
         {mode === 'ask' && initialStatus === 'idle' && followUps.length === 0 && (
-          <div className="ask-hint">在下面输入你的问题，AI 会结合这段文字回答。</div>
+          <div className="ask-hint">{t('在下面输入你的问题，AI 会结合这段文字回答。')}</div>
         )}
 
         {initialStatus !== 'idle' && (
           <div className="conversation-block">
             {initialStatus === 'waiting' && (
-              <div className="skeleton" aria-label="正在生成注解">
+              <div className="skeleton" aria-label={t('正在生成注解')}>
                 <span style={{ width: '62%' }} />
                 <span style={{ width: '94%' }} />
                 <span style={{ width: '88%' }} />
@@ -507,15 +524,15 @@ export function Panel(): JSX.Element {
             )}
             {initialStatus === 'error' ? (
               <div className="error-card">
-                <div className="error-title">没能完成注解</div>
+                <div className="error-title">{t('没能完成注解')}</div>
                 <p>{initialError}</p>
                 <div className="error-actions">
-                  <button onClick={() => void window.zhujie.panelRegenerate()}>重试</button>
+                  <button onClick={() => void window.zhujie.panelRegenerate()}>{t('重试')}</button>
                   <button className="ghost" onClick={() => void window.zhujie.panelOpenSettings()}>
-                    打开设置
+                    {t('打开设置')}
                   </button>
                   <button className="ghost" onClick={() => void window.zhujie.panelClose()}>
-                    关闭
+                    {t('关闭')}
                   </button>
                 </div>
               </div>
@@ -535,11 +552,11 @@ export function Panel(): JSX.Element {
             key={item.id}
           >
             <div className="followup-question">
-              <span>你的问题</span>
+              <span>{t('你的问题')}</span>
               <p>{item.question}</p>
             </div>
             {item.status === 'waiting' && (
-              <div className="skeleton" aria-label="正在回答">
+              <div className="skeleton" aria-label={t('正在回答')}>
                 <span style={{ width: '58%' }} />
                 <span style={{ width: '90%' }} />
                 <span style={{ width: '72%' }} />
@@ -547,12 +564,12 @@ export function Panel(): JSX.Element {
             )}
             {item.status === 'error' ? (
               <div className="error-card">
-                <div className="error-title">没能完成回答</div>
+                <div className="error-title">{t('没能完成回答')}</div>
                 <p>{item.error}</p>
                 <div className="error-actions">
-                  <button onClick={() => retryFollowUp(item)}>重试</button>
+                  <button onClick={() => retryFollowUp(item)}>{t('重试')}</button>
                   <button className="ghost" onClick={() => void window.zhujie.panelOpenSettings()}>
-                    打开设置
+                    {t('打开设置')}
                   </button>
                 </div>
               </div>
@@ -593,7 +610,7 @@ export function Panel(): JSX.Element {
           disabled={!canAsk}
         />
         <button type="submit" disabled={!question.trim() || !canAsk}>
-          提问
+          {t('提问')}
         </button>
       </form>
 
@@ -605,14 +622,14 @@ export function Panel(): JSX.Element {
         {lightModel && (
           <span
             className="model-hint"
-            title="这是轻量模型，复杂提问建议在顶部切换到 qwen3.8-max、DeepSeek V4 Pro 等更强的模型"
+            title={t('这是轻量模型，复杂提问建议在顶部切换到 qwen3.8-max、DeepSeek V4 Pro 等更强的模型')}
           >
-            轻量模型
+            {t('轻量模型')}
           </span>
         )}
-        {init && init.contextChars > 0 && <span className="context-badge">结合上下文</span>}
-        {pinnedOpen && <span className="pin-badge">已钉住</span>}
-        {init?.localOnly && <span className="local-badge">仅本机</span>}
+        {init && init.contextChars > 0 && <span className="context-badge">{t('结合上下文')}</span>}
+        {pinnedOpen && <span className="pin-badge">{t('已钉住')}</span>}
+        {init?.localOnly && <span className="local-badge">{t('仅本机')}</span>}
       </footer>
     </div>
   )

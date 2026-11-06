@@ -1,4 +1,5 @@
 import { BrowserWindow, Menu, Tray, app, nativeImage, screen, shell } from 'electron'
+import { translate, type Locale } from '../shared/i18n'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { isTrustedRendererUrl, rendererFileUrl } from './security'
@@ -85,7 +86,8 @@ export class WindowManager {
 
   constructor(
     private readonly onEnableToggle: (enabled: boolean) => void,
-    private readonly isEnabled: () => boolean
+    private readonly isEnabled: () => boolean,
+    private readonly getLocale: () => Locale
   ) {}
 
   createChip(): void {
@@ -294,21 +296,22 @@ export class WindowManager {
     let image = nativeImage.createFromPath(iconFile)
     if (image.isEmpty()) image = nativeImage.createEmpty()
     this.tray = new Tray(image.resize({ width: 16, height: 16 }))
-    this.tray.setToolTip('注解 · 划词 AI 助手')
+    this.tray.setToolTip(translate(this.getLocale(), '注解 · 划词 AI 助手'))
     const rebuild = (): void => {
       if (!this.tray) return
+      const t = (key: string): string => translate(this.getLocale(), key)
       this.tray.setContextMenu(
         Menu.buildFromTemplate([
-          { label: '打开设置', click: () => this.openSettings() },
+          { label: t('打开设置'), click: () => this.openSettings() },
           {
-            label: '启用划词注解',
+            label: t('启用划词注解'),
             type: 'checkbox',
             checked: this.isEnabled(),
             click: (item) => this.onEnableToggle(item.checked)
           },
           { type: 'separator' },
           {
-            label: '退出',
+            label: t('退出'),
             click: () => {
               this.quitting = true
               app.quit()

@@ -19,6 +19,7 @@ import {
   sortModelsForProvider
 } from '../src/shared/modelCatalog.ts'
 import { isNewerVersion, parseReleaseVersion } from '../src/shared/version.ts'
+import { resolveAnswerLocale, resolveLocale, translate } from '../src/shared/i18n.ts'
 import {
   checksumMatches,
   parseApplyResult,
@@ -190,6 +191,48 @@ test('能从 GitHub 重定向地址或发布页标题识别版本号', () => {
     parseReleaseVersion('https://github.com/x/y/releases/latest', '<title>没有版本号</title>'),
     null
   )
+})
+
+test('语言解析与英文提示词', () => {
+  assert.equal(resolveLocale('system', 'en-US'), 'en-US')
+  assert.equal(resolveLocale('system', 'zh-CN'), 'zh-CN')
+  assert.equal(resolveLocale('zh-CN', 'en-US'), 'zh-CN')
+  assert.equal(resolveAnswerLocale('auto', 'en-US'), 'en-US')
+  assert.equal(resolveAnswerLocale('zh-CN', 'en-US'), 'zh-CN')
+  assert.equal(translate('en-US', '模型'), 'Model')
+  assert.equal(translate('zh-CN', '模型'), '模型')
+  assert.equal(
+    translate('en-US', '连接成功，发现 {count} 个模型', { count: 3 }),
+    'Connected. Found 3 models.'
+  )
+
+  const system = buildSystemPrompt({
+    mode: 'annotate',
+    annotatePrompt: 'x',
+    hasContext: false,
+    selectionText: 'init',
+    locale: 'en-US'
+  })
+  assert.match(system, /selected word or phrase/i)
+
+  const message = buildUserMessage({
+    mode: 'annotate',
+    text: 'init',
+    context: 'before init after',
+    contextChars: 300,
+    locale: 'en-US'
+  })
+  assert.match(message, /\[SELECTED\]init\[\/SELECTED\]/)
+  assert.match(message, /\[Selected text to explain first\]/)
+
+  const askSystem = buildSystemPrompt({
+    mode: 'ask',
+    annotatePrompt: 'x',
+    hasContext: true,
+    locale: 'en-US'
+  })
+  assert.match(askSystem, /answer the user's question/i)
+  assert.match(askSystem, /reference material/i)
 })
 
 test('免费模型标识只覆盖本机模型与明确免费的云端模型', () => {

@@ -29,6 +29,32 @@ test('设置写入失败时返回 false 并保留错误信息', () => {
   }
 })
 
+test('旧设置迁移为中文，新设置跟随系统语言', () => {
+  const dir = tempDir()
+  try {
+    const fresh = new SettingsStore(dir)
+    assert.equal(fresh.get().language, 'system')
+    assert.equal(fresh.get().answerLanguage, 'auto')
+    assert.equal(fresh.get().prompt.length > 0, true)
+
+    const file = join(dir, 'settings.json')
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+    delete raw.language
+    delete raw.answerLanguage
+    writeFileSync(file, JSON.stringify(raw), 'utf8')
+
+    const migrated = new SettingsStore(dir)
+    assert.equal(migrated.get().language, 'zh-CN')
+    assert.equal(migrated.get().answerLanguage, 'auto')
+
+    migrated.update({ language: 'en-US', answerLanguage: 'en-US' })
+    assert.equal(migrated.get().language, 'en-US')
+    assert.equal(migrated.get().answerLanguage, 'en-US')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('百炼模型列表会删除不能文字对话的模型', () => {
   const dir = tempDir()
   try {

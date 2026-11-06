@@ -21,6 +21,7 @@ import { buildSystemPrompt, buildUserMessage, markSelection } from './prompt'
 import { estimateCostCny, usageMultiplier } from '../shared/pricing'
 import { isFreeModel } from '../shared/presets'
 import { isChatModel } from '../shared/modelCatalog'
+import { resolveAnswerLocale, resolveLocale, translate, type Locale } from '../shared/i18n'
 import { SelectionService, isUsablePoint, toDipPoint, type Point, type RawSelection } from './selection'
 import { isTrustedRendererUrl, rendererFileUrl } from './security'
 import { SettingsStore } from './settings'
@@ -65,6 +66,14 @@ let favorites: FavoriteStore
 let windows: WindowManager
 let selection: SelectionService | null = null
 let updater: UpdateManager
+
+function uiLocale(): Locale {
+  return resolveLocale(settings?.get().language ?? 'system', app.getLocale())
+}
+
+function mt(key: string, params?: Record<string, string | number>): string {
+  return translate(uiLocale(), key, params)
+}
 let compressingHistory = false
 const promptedUpdates = new Set<string>()
 
@@ -352,18 +361,23 @@ async function runAnnotationRequest(
 
   if (!provider) {
     a.pending = false
-    sendPanelError('这个模型服务已不存在，请到设置里重新选择。')
+    sendPanelError(mt('这个模型服务已不存在，请到设置里重新选择。'))
     return
   }
   if (!a.model) {
     a.pending = false
-    sendPanelError('还没有选择 AI。请打开设置 → 模型服务，选一家 AI、选一个模型，然后填入 API Key。')
+    sendPanelError(
+      mt('还没有选择 AI。请打开设置 → 模型服务，选一家 AI、选一个模型，然后填入 API Key。')
+    )
     return
   }
   if (s.localOnly && !isLocalBaseUrl(provider.baseUrl)) {
     a.pending = false
     sendPanelError(
-      `已开启「仅本机」模式，但 ${provider.name} 指向非本机地址（${provider.baseUrl}），请求已被阻止。`
+      mt('已开启「仅本机」模式，但 {name} 指向非本机地址（{url}），请求已被阻止。', {
+        name: provider.name,
+        url: provider.baseUrl
+      })
     )
     return
   }
@@ -465,9 +479,11 @@ async function runAnnotationRequest(
     if (isSelftest) console.log('[selftest] panel:error', rawMessage)
     const hint =
       provider.kind === 'ollama' && /fetch failed|ECONNREFUSED|Failed to fetch/i.test(rawMessage)
-        ? `连不上 ${provider.name}。请确认本机模型服务已启动（例如运行 ollama serve）。`
+        ? mt('连不上 {name}。请确认本机模型服务已启动（例如运行 ollama serve）。', {
+            name: provider.name
+          })
         : /404/.test(rawMessage)
-          ? `接口路径可能不对，请检查 Base URL：${provider.baseUrl}`
+          ? mt('接口路径可能不对，请检查 Base URL：{url}', { url: provider.baseUrl })
           : rawMessage
     sendPanelError(hint)
     usage.add({
@@ -496,19 +512,22 @@ async function startAnnotation(): Promise<void> {
   const a = activeAnnotation
   if (!a || a.mode === 'ask') return
   const s = settings.get()
+  const answerLocale = resolveAnswerLocale(s.answerLanguage, uiLocale())
   a.turns = []
   await runAnnotationRequest(a, {
     system: buildSystemPrompt({
       mode: 'annotate',
       annotatePrompt: s.prompt,
       hasContext: Boolean(a.context),
-      selectionText: a.text
+      selectionText: a.text,
+      locale: answerLocale
     }),
     user: buildUserMessage({
       mode: 'annotate',
       text: a.text,
       context: a.context,
-      contextChars: s.contextChars
+      contextChars: s.contextChars,
+      locale: answerLocale
     }),
     historyMode: 'annotate',
     followUp: false
@@ -521,12 +540,14 @@ async function askPanelQuestion(question: string): Promise<boolean> {
   const q = question.trim().slice(0, MAX_QUESTION_CHARS)
   if (!q || a.pending) return false
   const s = settings.get()
+  const answerLocale = resolveAnswerLocale(s.answerLanguage, uiLocale())
   a.lastQuestion = q
   await runAnnotationRequest(a, {
     system: buildSystemPrompt({
       mode: 'ask',
       annotatePrompt: s.prompt,
-      hasContext: Boolean(a.context)
+      hasContext: Boolean(a.context),
+      locale: answerLocale
     }),
     user: buildUserMessage({
       mode: 'ask',
@@ -534,7 +555,8 @@ async function askPanelQuestion(question: string): Promise<boolean> {
       question: q,
       context: a.context,
       contextChars: s.contextChars,
-      turns: a.turns.slice(-4)
+      turns: a.turns.slice(-4),
+      locale: answerLocale
     }),
     historyMode: 'ask',
     followUp: true,
@@ -545,15 +567,15 @@ async function askPanelQuestion(question: string): Promise<boolean> {
 
 function togglePanelFavorite(): FavoriteToggleResult {
   const a = activeAnnotation
-  if (!a) return { ok: false, favorited: false, error: '没有打开的面板' }
-  if (a.pending) return { ok: false, favorited: false, error: '回答还没完成' }
+  if (!a) return { ok: false, favorited: false, error: mt('没有打开的面板') }
+  if (a.pending) return { ok: false, favorited: false, error: mt('回答还没完成') }
   const turn = a.turns[a.turns.length - 1]
-  if (!turn) return { ok: false, favorited: false, error: '还没有可收藏的回答' }
+  if (!turn) return { ok: false, favorited: false, error: mt('还没有可收藏的回答') }
 
   const existing = favorites.findByTurnId(turn.id)
   if (existing) {
     if (!favorites.remove(existing.id)) {
-      return { ok: false, favorited: true, id: existing.id, error: '收藏写入磁盘失败，请检查磁盘空间。' }
+      return { ok: false, favorited: true, id: existing.id, error: mt('收藏写入磁盘失败，请检查磁盘空间。') }
     }
     windows.settings?.webContents.send('favorites:changed')
     return { ok: true, favorited: false, id: existing.id }
@@ -575,7 +597,7 @@ function togglePanelFavorite(): FavoriteToggleResult {
     cost: turn.cost
   }
   if (!favorites.add(item)) {
-    return { ok: false, favorited: false, error: '收藏写入磁盘失败，请检查磁盘空间。' }
+    return { ok: false, favorited: false, error: mt('收藏写入磁盘失败，请检查磁盘空间。') }
   }
   windows.settings?.webContents.send('favorites:changed')
   return { ok: true, favorited: true, id: item.id }
@@ -636,6 +658,7 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
 
   const init: PanelInit = {
     mode,
+    locale: uiLocale(),
     text: sel.text,
     programName: sel.programName,
     providerId: provider.id,
@@ -742,6 +765,7 @@ function state(): AppState {
   return {
     settings: settings.getView(),
     providers: settings.getProvidersView(),
+    locale: uiLocale(),
     hookStatus: selection?.status ?? 'stopped',
     hookError: selection?.error,
     version: app.getVersion(),
@@ -763,8 +787,8 @@ function promptUpdateDownload(latest: string): void {
   if (!visible) {
     if (Notification.isSupported()) {
       const note = new Notification({
-        title: `注解 v${latest} 可用`,
-        body: '点此打开设置，下载并安装更新。'
+        title: mt('发现新版本 v{version}', { version: latest }),
+        body: mt('点此打开设置，下载并安装更新。')
       })
       note.on('click', () => windows.openSettings())
       note.show()
@@ -774,10 +798,10 @@ function promptUpdateDownload(latest: string): void {
 
   const options: Electron.MessageBoxOptions = {
     type: 'info',
-    title: '发现新版本',
-    message: `发现新版本 v${latest}`,
-    detail: '是否现在下载？下载完成后需要重启安装，配置和历史会保留。',
-    buttons: ['下载更新', '稍后'],
+    title: mt('发现新版本'),
+    message: mt('发现新版本 v{version}', { version: latest }),
+    detail: mt('是否现在下载？下载完成后需要重启安装，配置和历史会保留。'),
+    buttons: [mt('下载更新'), mt('稍后')],
     defaultId: 0,
     cancelId: 1,
     noLink: true
@@ -836,7 +860,9 @@ function handle(
 function ensureSettingsSaved(): void {
   if (!settings.flush()) {
     throw new Error(
-      `设置已在本次运行中生效，但写入磁盘失败：${settings.getLastWriteError() ?? '未知错误'}`
+      mt('设置已在本次运行中生效，但写入磁盘失败：{error}', {
+        error: settings.getLastWriteError() ?? mt('未知错误')
+      })
     )
   }
 }
@@ -858,12 +884,12 @@ function registerIpc(): void {
   })
 
   handle('provider:save', (_event, patch: ProviderPatch) => {
-    if (!patch || !patch.baseUrl?.trim()) throw new Error('Base URL 不能为空')
+    if (!patch || !patch.baseUrl?.trim()) throw new Error(mt('Base URL 不能为空'))
     if (!/^https?:\/\//i.test(patch.baseUrl.trim())) {
-      throw new Error('Base URL 必须以 http:// 或 https:// 开头')
+      throw new Error(mt('Base URL 必须以 http:// 或 https:// 开头'))
     }
     if (patch.kind !== 'ollama' && patch.kind !== 'openai') {
-      throw new Error('不支持的协议类型')
+      throw new Error(mt('不支持的协议类型'))
     }
     settings.saveProvider(patch)
     broadcastState()
@@ -880,9 +906,9 @@ function registerIpc(): void {
 
   handle('provider:test', async (_event, id: string): Promise<TestProviderResult> => {
     const provider = settings.getProvider(String(id))
-    if (!provider) return { ok: false, models: [], error: '模型服务不存在' }
+    if (!provider) return { ok: false, models: [], error: mt('模型服务不存在') }
     if (settings.get().localOnly && !isLocalBaseUrl(provider.baseUrl)) {
-      return { ok: false, models: [], error: '已开启「仅本机」模式，已阻止非本机地址' }
+      return { ok: false, models: [], error: mt('已开启「仅本机」模式，已阻止非本机地址') }
     }
     try {
       const models = await listModels(provider, settings.apiKey(provider.id))
@@ -896,16 +922,18 @@ function registerIpc(): void {
         return {
           ok: false,
           models,
-          error: `连接成功，但模型列表写入磁盘失败：${settings.getLastWriteError() ?? '未知错误'}`
+          error: mt('连接成功，但模型列表写入磁盘失败：{error}', {
+            error: settings.getLastWriteError() ?? mt('未知错误')
+          })
         }
       }
       return { ok: true, models }
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error)
       const message = /fetch failed|ECONNREFUSED|ENOTFOUND|Failed to fetch/i.test(raw)
-        ? `连不上 ${provider.name}。请确认它已经启动，然后再试一次。`
+        ? mt('连不上 {name}。请确认它已经启动，然后再试一次。', { name: provider.name })
         : /401|unauthorized|invalid.*key|api key/i.test(raw)
-          ? 'API Key 不正确或没有权限（401）。请重新复制一次 Key。'
+          ? mt('API Key 不正确或没有权限（401）。请重新复制一次 Key。')
           : raw
       return { ok: false, models: [], error: message }
     }
@@ -921,36 +949,36 @@ function registerIpc(): void {
   handle('history:summaries', () => history.listSummaries())
   handle('history:delete', (_event, id: string) => {
     if (!history.remove(String(id))) {
-      throw new Error('删除历史记录写入磁盘失败，请检查磁盘空间后重试。')
+      throw new Error(mt('删除历史记录写入磁盘失败，请检查磁盘空间后重试。'))
     }
     return history.list(HISTORY_LIMIT)
   })
   handle('history:clear', () => {
     if (!history.clear()) {
-      throw new Error('清空历史记录写入磁盘失败，请检查磁盘空间后重试。')
+      throw new Error(mt('清空历史记录写入磁盘失败，请检查磁盘空间后重试。'))
     }
     return history.list(HISTORY_LIMIT)
   })
   handle('favorites:list', () => favorites.list())
   handle('favorites:delete', (_event, id: string) => {
     if (!favorites.remove(String(id))) {
-      throw new Error('删除收藏写入磁盘失败，请检查磁盘空间后重试。')
+      throw new Error(mt('删除收藏写入磁盘失败，请检查磁盘空间后重试。'))
     }
     return favorites.list()
   })
   handle('favorites:clear', () => {
     if (!favorites.clear()) {
-      throw new Error('清空收藏写入磁盘失败，请检查磁盘空间后重试。')
+      throw new Error(mt('清空收藏写入磁盘失败，请检查磁盘空间后重试。'))
     }
     return favorites.list()
   })
   handle('favorites:toggle-history', (_event, id: string): FavoriteToggleResult => {
     const record = history.get(String(id))
-    if (!record) return { ok: false, favorited: false, error: '这条历史记录不存在。' }
+    if (!record) return { ok: false, favorited: false, error: mt('这条历史记录不存在。') }
     const existing = favorites.findByTurnId(record.id)
     if (existing) {
       if (!favorites.remove(existing.id)) {
-        return { ok: false, favorited: true, id: existing.id, error: '收藏写入磁盘失败，请检查磁盘空间。' }
+        return { ok: false, favorited: true, id: existing.id, error: mt('收藏写入磁盘失败，请检查磁盘空间。') }
       }
       windows.settings?.webContents.send('favorites:changed')
       return { ok: true, favorited: false, id: existing.id }
@@ -972,7 +1000,7 @@ function registerIpc(): void {
       cost: record.cost
     }
     if (!favorites.add(item)) {
-      return { ok: false, favorited: false, error: '收藏写入磁盘失败，请检查磁盘空间。' }
+      return { ok: false, favorited: false, error: mt('收藏写入磁盘失败，请检查磁盘空间。') }
     }
     windows.settings?.webContents.send('favorites:changed')
     return { ok: true, favorited: true, id: item.id }
@@ -995,12 +1023,17 @@ function registerIpc(): void {
   handle('history:compress', async (): Promise<HistoryCompressResult> => {
     const kept = history.list(HISTORY_LIMIT).length
     if (compressingHistory) {
-      return { ok: false, error: '正在压缩历史记录，请等这次完成后再试。', compressed: 0, kept }
+      return {
+        ok: false,
+        error: mt('正在压缩历史记录，请等这次完成后再试。'),
+        compressed: 0,
+        kept
+      }
     }
     if (kept < HISTORY_LIMIT) {
       return {
         ok: false,
-        error: `历史记录达到 ${HISTORY_LIMIT} 条后才能压缩。`,
+        error: mt('历史记录达到 {count} 条后才能压缩。', { count: HISTORY_LIMIT }),
         compressed: 0,
         kept
       }
@@ -1009,15 +1042,25 @@ function registerIpc(): void {
     const provider = settings.getProvider(s.defaultProviderId)
     const model = s.defaultModel || provider?.models[0] || ''
     if (!provider) {
-      return { ok: false, error: '没有可用的模型服务，请先去「模型服务」配置。', compressed: 0, kept }
+      return {
+        ok: false,
+        error: mt('没有可用的模型服务，请先去「模型服务」配置。'),
+        compressed: 0,
+        kept
+      }
     }
     if (!model) {
-      return { ok: false, error: '还没有选择模型，请先去「模型服务」选择模型。', compressed: 0, kept }
+      return {
+        ok: false,
+        error: mt('还没有选择模型，请先去「模型服务」选择模型。'),
+        compressed: 0,
+        kept
+      }
     }
     if (s.localOnly && !isLocalBaseUrl(provider.baseUrl)) {
       return {
         ok: false,
-        error: '已开启「仅本机」模式，当前模型不是本机地址，压缩请求已被阻止。',
+        error: mt('已开启「仅本机」模式，当前模型不是本机地址，压缩请求已被阻止。'),
         compressed: 0,
         kept
       }
@@ -1032,8 +1075,19 @@ function registerIpc(): void {
         provider,
         apiKey: settings.apiKey(provider.id),
         model,
-        onProgress: (progress) =>
-          windows.settings?.webContents.send('history:compress-progress', progress)
+        onProgress: (progress) => {
+          const message = progress.message
+            .replace(/^第 (\d+)\/(\d+) 批$/, (_, done, total) =>
+              mt('第 {done}/{total} 批', { done, total })
+            )
+            .replace(/^已整理 (\d+)\/(\d+) 条$/, (_, done, total) =>
+              mt('已整理 {done}/{total} 条', { done, total })
+            )
+          windows.settings?.webContents.send('history:compress-progress', {
+            ...progress,
+            message: mt(message)
+          })
+        }
       })
       windows.settings?.webContents.send('history:changed')
       windows.settings?.webContents.send('usage:changed')
@@ -1043,7 +1097,7 @@ function registerIpc(): void {
       usage.add({
         id: usage.newId(),
         ts: Date.now(),
-        programName: '历史记录压缩',
+        programName: mt('历史记录压缩'),
         providerId: provider.id,
         providerName: provider.name,
         model,
@@ -1070,6 +1124,7 @@ function registerIpc(): void {
     return true
   })
 
+  handle('chip:locale', () => uiLocale())
   handle('chip:click', async (_event, action: string) => {
     await openAnnotationFromChip(action === 'ask' ? 'ask' : 'annotate')
     return true
@@ -1171,7 +1226,8 @@ function startServices(): void {
   }
   windows = new WindowManager(
     (enabled) => setEnabled(enabled),
-    () => settings.get().enabled
+    () => settings.get().enabled,
+    () => uiLocale()
   )
   windows.createChip()
   windows.createTray()
@@ -1185,7 +1241,8 @@ function startServices(): void {
       setTimeout(() => app.quit(), 700)
     },
     shouldAutoDownload: () => settings.get().autoDownloadUpdates,
-    onAvailable: (latest) => promptUpdateDownload(latest)
+    onAvailable: (latest) => promptUpdateDownload(latest),
+    getLocale: () => uiLocale()
   })
   const applyResult = updater.readApplyResult()
   if (applyResult) updater.reportApplyResult(applyResult)
@@ -1366,6 +1423,8 @@ async function runSelfTest(): Promise<void> {
     })
     settings.setModels('custom', ['mock-annotator', 'mock-annotator-2'])
     settings.update({
+      language: 'zh-CN',
+      answerLanguage: 'auto',
       enabled: true,
       localOnly: true,
       filterMode: 'all',
@@ -1402,7 +1461,7 @@ async function runSelfTest(): Promise<void> {
     const chip = windows.chip
     if (!chip) throw new Error('注解小框未创建')
     const chipApi = await chip.webContents.executeJavaScript('Object.keys(window.zhujie).sort()')
-    if (JSON.stringify(chipApi) !== JSON.stringify(['chipClick', 'onAppear'])) {
+    if (JSON.stringify(chipApi) !== JSON.stringify(['chipClick', 'getLocale', 'onAppear'])) {
       throw new Error('小框 preload 权限不符合预期')
     }
     chip.webContents.sendInputEvent({ type: 'mouseDown', x: 29, y: 22, button: 'left', clickCount: 1 })

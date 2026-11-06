@@ -1,3 +1,5 @@
+import type { AnswerLanguageSetting, LanguageSetting, Locale } from './i18n'
+
 export type ProviderKind = 'ollama' | 'openai'
 
 export interface ProviderView {
@@ -29,6 +31,8 @@ export interface AppEntry {
 }
 
 export interface SettingsView {
+  language: LanguageSetting
+  answerLanguage: AnswerLanguageSetting
   enabled: boolean
   localOnly: boolean
   filterMode: 'all' | 'whitelist'
@@ -49,6 +53,7 @@ export interface SettingsView {
 export interface AppState {
   settings: SettingsView
   providers: ProviderView[]
+  locale: Locale
   hookStatus: 'starting' | 'running' | 'stopped' | 'error'
   hookError?: string
   version: string
@@ -139,6 +144,7 @@ export type PanelMode = 'annotate' | 'ask'
 
 export interface PanelInit {
   mode: PanelMode
+  locale: Locale
   text: string
   programName: string
   providerId: string
@@ -242,6 +248,8 @@ export interface PanelError {
 }
 
 export interface SettingsPatch {
+  language?: LanguageSetting
+  answerLanguage?: AnswerLanguageSetting
   enabled?: boolean
   localOnly?: boolean
   filterMode?: 'all' | 'whitelist'
@@ -278,3 +286,7 @@ export interface TestProviderResult {
 export const DEFAULT_PROMPT = `你是一位严谨的阅读注解助手。只围绕选中的内容回答；专业术语要点破，不写客套话。
 使用 Markdown，控制在 300 字以内。
 回答顺序由应用按「词 / 问题 / 段落」自动决定，不需要在这段提示词里重复。`
+
+export const DEFAULT_PROMPT_EN = `You are a rigorous reading annotation assistant. Answer only about the selected content, name technical terms plainly, and skip pleasantries.
+Use Markdown and keep the answer under 300 words.
+The app chooses the answer structure for words, questions, and paragraphs automatically; do not repeat it here.`

@@ -14,10 +14,20 @@ import type {
   UpdateProgress,
   UsageSummary
 } from '../../shared/types'
-import { DEFAULT_PROMPT, HISTORY_KEEP_RECENT, HISTORY_LIMIT } from '../../shared/types'
-import { PROVIDER_PRESETS, isLocalAddress, presetById } from '../../shared/presets'
+import { DEFAULT_PROMPT, DEFAULT_PROMPT_EN, HISTORY_KEEP_RECENT, HISTORY_LIMIT } from '../../shared/types'
+import {
+  PROVIDER_PRESETS,
+  isLocalAddress,
+  presetById,
+  presetDisplayName,
+  presetGuide,
+  presetName,
+  presetTagline
+} from '../../shared/presets'
 import { formatCny, formatUsageMultiplier, usageMultiplier } from '../../shared/pricing'
 import { groupQwenModels, modelDisplayName, type ModelGroup } from '../../shared/modelCatalog'
+import { getI18nLocale, setI18nLocale, t } from './i18n'
+import appIcon from './assets/app-icon.png'
 
 marked.setOptions({ gfm: true, breaks: true })
 
@@ -130,10 +140,10 @@ function Icon({ name }: { name: string }): JSX.Element {
   )
 }
 
-const fmtNum = (n: number): string => n.toLocaleString('zh-CN')
+const fmtNum = (n: number): string => n.toLocaleString(getI18nLocale())
 
 const fmtTime = (ts: number): string =>
-  new Date(ts).toLocaleString('zh-CN', {
+  new Date(ts).toLocaleString(getI18nLocale(), {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -148,7 +158,7 @@ const readableError = (error: unknown): string => {
 function MultiplierBadge({ value }: { value: number | null }): JSX.Element | null {
   if (value === null) {
     return (
-      <span className="multiplier unknown" title="未收录该模型价格，暂不比较">
+      <span className="multiplier unknown" title={t('未收录该模型价格，暂不比较')}>
         —
       </span>
     )
@@ -157,7 +167,7 @@ function MultiplierBadge({ value }: { value: number | null }): JSX.Element | nul
   return (
     <span
       className={`multiplier ${tone}`}
-      title="相对 deepseek-flash 的 token 价格；按每百万 tokens 输入+输出估算，实际以用量页为准"
+      title={t('相对 deepseek-flash 的 token 价格；按每百万 tokens 输入+输出估算，实际以用量页为准')}
     >
       {formatUsageMultiplier(value)}
     </span>
@@ -166,8 +176,15 @@ function MultiplierBadge({ value }: { value: number | null }): JSX.Element | nul
 
 const multiplierSuffix = (value: number | null): string => {
   if (value === null) return ''
-  if (value === 0) return '（免费）'
+  if (value === 0) return t('（免费）')
   return `（${formatUsageMultiplier(value)}）`
+}
+
+const promptForLocale = (prompt: string, locale: string): string => {
+  const value = prompt.trim()
+  if (locale === 'en-US' && value === DEFAULT_PROMPT.trim()) return DEFAULT_PROMPT_EN
+  if (locale === 'zh-CN' && value === DEFAULT_PROMPT_EN.trim()) return DEFAULT_PROMPT
+  return prompt
 }
 
 const normalizeAppName = (value: string): string =>
@@ -180,11 +197,11 @@ function historyThreadKey(record: HistoryRecord): string {
 function relativeTime(ts: number): string {
   const diff = Date.now() - ts
   const minutes = Math.floor(diff / 60000)
-  if (minutes < 1) return '刚刚'
-  if (minutes < 60) return `${minutes} 分钟前`
+  if (minutes < 1) return t('刚刚')
+  if (minutes < 60) return t('{count} 分钟前', { count: minutes })
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} 小时前`
-  return `${Math.floor(hours / 24)} 天前`
+  if (hours < 24) return t('{count} 小时前', { count: hours })
+  return t('{count} 天前', { count: Math.floor(hours / 24) })
 }
 
 export function App(): JSX.Element {
@@ -253,7 +270,7 @@ export function App(): JSX.Element {
     try {
       setApps(await window.zhujie.listApps(force))
     } catch (error) {
-      setAppsError(error instanceof Error ? error.message : '扫描应用失败')
+      setAppsError(error instanceof Error ? error.message : t('扫描应用失败'))
     } finally {
       setAppsLoading(false)
     }
@@ -357,7 +374,7 @@ export function App(): JSX.Element {
       if (!alive) return
       setState(next)
       setUsage(nextUsage)
-      setPromptDraft(next.settings.prompt)
+      setPromptDraft(promptForLocale(next.settings.prompt, next.locale))
     })()
     const offState = window.zhujie.on('state:changed', (next: AppState) => setState(next))
     const offUsage = window.zhujie.on('usage:changed', () => {
@@ -372,7 +389,7 @@ export function App(): JSX.Element {
   }, [refreshUsage])
 
   useEffect(() => {
-    if (state && !promptDirty) setPromptDraft(state.settings.prompt)
+    if (state && !promptDirty) setPromptDraft(promptForLocale(state.settings.prompt, state.locale))
   }, [state, promptDirty])
 
   useEffect(() => {
@@ -400,33 +417,36 @@ export function App(): JSX.Element {
     const name = appInput.trim()
     if (!name) return
     if (state.settings.whitelist.includes(name)) {
-      flash('已在列表中')
+      flash(t('已在列表中'))
       return
     }
-    void patch({ whitelist: [...state.settings.whitelist, name] }, `已加入：${name}`)
+    void patch(
+      { whitelist: [...state.settings.whitelist, name] },
+      t('已加入：{name}', { name })
+    )
     setAppInput('')
   }
 
   const savePrompt = async (): Promise<void> => {
     if (!promptDraft.trim()) {
-      flash('提示词不能为空')
+      flash(t('提示词不能为空'))
       return
     }
-    await patch({ prompt: promptDraft }, '提示词已保存')
+    await patch({ prompt: promptDraft }, t('提示词已保存'))
     setPromptDirty(false)
   }
 
   const saveProvider = async (): Promise<void> => {
     if (!editor) return
     if (!editor.baseUrl.trim()) {
-      flash('请填写 Base URL')
+      flash(t('请填写 Base URL'))
       return
     }
     setSavingProvider(true)
     try {
       const payload: ProviderPatch = {
         id: editor.id,
-        name: editor.name || '自定义服务',
+        name: editor.name || t('自定义服务'),
         kind: editor.kind,
         baseUrl: editor.baseUrl,
         apiKey: editor.apiKey.trim() ? editor.apiKey.trim() : undefined,
@@ -436,7 +456,7 @@ export function App(): JSX.Element {
       const updated = await window.zhujie.saveProvider(payload)
       setState(updated)
       setEditor(null)
-      flash('模型服务已保存')
+      flash(t('模型服务已保存'))
     } catch (error) {
       flash(readableError(error))
     } finally {
@@ -454,7 +474,7 @@ export function App(): JSX.Element {
       }))
       if (result.ok) {
         setState(await window.zhujie.getState())
-        flash(`连接成功，发现 ${result.models.length} 个模型`)
+        flash(t('连接成功，发现 {count} 个模型', { count: result.models.length }))
       }
     } catch (error) {
       const message = readableError(error)
@@ -464,10 +484,10 @@ export function App(): JSX.Element {
   }
 
   const clearUsage = async (): Promise<void> => {
-    if (!window.confirm('确定清空本机用量记录？此操作不可恢复。')) return
+    if (!window.confirm(t('确定清空本机用量记录？此操作不可恢复。'))) return
     try {
       setUsage(await window.zhujie.clearUsage())
-      flash('用量记录已清空')
+      flash(t('用量记录已清空'))
     } catch (error) {
       flash(readableError(error))
     }
@@ -478,19 +498,19 @@ export function App(): JSX.Element {
       const items = await window.zhujie.deleteHistory(id)
       setHistoryItems(items)
       setSelectedHistoryId(items[0]?.id ?? '')
-      flash('历史记录已删除')
+      flash(t('历史记录已删除'))
     } catch (error) {
       flash(readableError(error))
     }
   }
 
   const clearHistory = async (): Promise<void> => {
-    if (!window.confirm('清空全部历史记录和综合摘要？此操作不可恢复。')) return
+    if (!window.confirm(t('清空全部历史记录和综合摘要？此操作不可恢复。'))) return
     try {
       await window.zhujie.clearHistory()
       await loadHistory()
       setSelectedHistoryId('')
-      flash('历史记录已清空')
+      flash(t('历史记录已清空'))
     } catch (error) {
       flash(readableError(error))
     }
@@ -499,17 +519,17 @@ export function App(): JSX.Element {
   const removeFavorite = async (id: string): Promise<void> => {
     try {
       setFavorites(await window.zhujie.deleteFavorite(id))
-      flash('收藏已删除')
+      flash(t('收藏已删除'))
     } catch (error) {
       flash(readableError(error))
     }
   }
 
   const clearFavorites = async (): Promise<void> => {
-    if (!window.confirm('清空全部收藏？此操作不可恢复。')) return
+    if (!window.confirm(t('清空全部收藏？此操作不可恢复。'))) return
     try {
       setFavorites(await window.zhujie.clearFavorites())
-      flash('收藏已清空')
+      flash(t('收藏已清空'))
     } catch (error) {
       flash(readableError(error))
     }
@@ -517,21 +537,26 @@ export function App(): JSX.Element {
 
   const copyHistoryThread = async (thread: HistoryThread): Promise<void> => {
     const parts = thread.items.map((record) =>
-      record.question ? `问：${record.question}\n答：${record.answer}` : record.answer
+      record.question
+        ? t('问：{question}\n答：{answer}', {
+            question: record.question,
+            answer: record.answer
+          })
+        : record.answer
     )
     await window.zhujie.writeClipboard(parts.join('\n\n---\n\n'))
-    flash('已复制完整对话')
+    flash(t('已复制完整对话'))
   }
 
   const toggleHistoryFavorite = async (record: HistoryRecord): Promise<void> => {
     try {
       const result = await window.zhujie.toggleHistoryFavorite(record.id)
       if (!result.ok) {
-        flash(result.error ?? '收藏失败')
+        flash(result.error ?? t('收藏失败'))
         return
       }
       await loadFavorites()
-      flash(result.favorited ? '已收藏这条问答' : '已取消收藏')
+      flash(result.favorited ? t('已收藏这条问答') : t('已取消收藏'))
     } catch (error) {
       flash(readableError(error))
     }
@@ -541,7 +566,7 @@ export function App(): JSX.Element {
     setHookBusy(true)
     try {
       setState(await window.zhujie.restartHook())
-      flash('取词服务已重启')
+      flash(t('取词服务已重启'))
     } catch (error) {
       flash(readableError(error))
     } finally {
@@ -552,7 +577,7 @@ export function App(): JSX.Element {
   const downloadUpdate = async (): Promise<void> => {
     try {
       const status = await window.zhujie.downloadUpdate()
-      if (status.phase === 'error') flash(status.message ?? '下载更新失败')
+      if (status.phase === 'error') flash(status.message ?? t('下载更新失败'))
     } catch (error) {
       flash(readableError(error))
     }
@@ -563,14 +588,18 @@ export function App(): JSX.Element {
     if (count < HISTORY_LIMIT) return
     const compressible = count - HISTORY_KEEP_RECENT
     const confirmed = window.confirm(
-      `历史记录已有 ${count} 条。\n\n将把最早的 ${compressible} 条压缩成一份综合摘要，保留最近 ${HISTORY_KEEP_RECENT} 条原文。\n\n旧记录会被删除且不可恢复，建议先备份 history.jsonl。压缩会调用 AI，可能产生费用并需要一点时间。继续吗？`
+      t('历史记录已有 {count} 条。\n\n将把最早的 {old} 条压缩成一份综合摘要，保留最近 {keep} 条原文。\n\n旧记录会被删除且不可恢复，建议先备份 history.jsonl。压缩会调用 AI，可能产生费用并需要一点时间。继续吗？', {
+        count,
+        old: compressible,
+        keep: HISTORY_KEEP_RECENT
+      })
     )
     if (!confirmed) return
     setCompressState({
       busy: true,
       done: 0,
       total: compressible,
-      message: '正在准备历史记录…'
+      message: t('正在准备历史记录…')
     })
     try {
       const result = await window.zhujie.compressHistory()
@@ -580,14 +609,19 @@ export function App(): JSX.Element {
           done: 0,
           total: compressible,
           message: '',
-          error: result.error ?? '压缩失败'
+          error: result.error ?? t('压缩失败')
         })
         return
       }
       setCompressState(null)
       await loadHistory()
       await refreshUsage()
-      flash(`已压缩 ${result.compressed} 条，保留最近 ${result.kept} 条`)
+      flash(
+        t('已压缩 {compressed} 条，保留最近 {kept} 条', {
+          compressed: result.compressed,
+          kept: result.kept
+        })
+      )
     } catch (error) {
       setCompressState({
         busy: false,
@@ -758,9 +792,10 @@ export function App(): JSX.Element {
   )
 
   if (!state) {
-    return <div className="boot">正在读取本机配置…</div>
+    return <div className="boot">{t('正在读取本机配置…')}</div>
   }
 
+  setI18nLocale(state.locale)
   const settings = state.settings
   const runningCount = apps?.filter((app) => app.running).length ?? 0
   const isRowWhitelisted = (key: string): boolean =>
@@ -770,7 +805,10 @@ export function App(): JSX.Element {
     const next = exists
       ? settings.whitelist.filter((item) => normalizeAppName(item) !== row.key)
       : [...settings.whitelist, row.processName]
-    void patch({ whitelist: next }, exists ? `已移出：${row.label}` : `已加入：${row.label}`)
+    void patch(
+      { whitelist: next },
+      exists ? t('已移出：{name}', { name: row.label }) : t('已加入：{name}', { name: row.label })
+    )
   }
   const visiblePresets = PROVIDER_PRESETS.filter((preset) => preset.local === settings.localOnly)
   const activePreset = presetById(selectedPresetId)
@@ -787,7 +825,15 @@ export function App(): JSX.Element {
   const activePresetInfo = activeProviderInfo
     ? presetById(activeProviderInfo.presetId ?? '')
     : undefined
-  const activeLabel = activePresetInfo?.name ?? activeProviderInfo?.name ?? '还没有配置 AI'
+  const activeLabel = activeProviderInfo
+    ? presetDisplayName(
+        activePresetInfo?.id ?? activeProviderInfo.presetId ?? activeProviderInfo.id,
+        activeProviderInfo.name,
+        state.locale
+      )
+    : t('还没有配置 AI')
+  const activeGuide = activePreset ? presetGuide(activePreset, state.locale) : null
+  const activePresetName = activePreset ? presetName(activePreset, state.locale) : ''
   const activeIsLocal = activeProviderInfo
     ? isLocalAddress(activeProviderInfo.baseUrl)
     : settings.localOnly
@@ -821,7 +867,11 @@ export function App(): JSX.Element {
         ? currentPreset
         : PROVIDER_PRESETS.find((preset) => preset.local === local)
     if (pick) selectPreset(pick.id, updated)
-    flash(local ? '已切换：只用本机模型，不联网' : '已切换：允许云端 AI，选中的文字会发出去')
+    flash(
+      local
+        ? t('已切换：只用本机模型，不联网')
+        : t('已切换：允许云端 AI，选中的文字会发出去')
+    )
   }
 
   async function detectLocalModels(): Promise<void> {
@@ -838,7 +888,7 @@ export function App(): JSX.Element {
         setPresetNotice({
           ok: false,
           message:
-            result.error ?? '没有检测到模型。请先启动 Ollama / LM Studio，并下载一个模型。'
+            result.error ?? t('没有检测到模型。请先启动 Ollama / LM Studio，并下载一个模型。')
         })
       }
     } finally {
@@ -850,7 +900,7 @@ export function App(): JSX.Element {
     if (!activePreset || !activeProvider) return
     const model = (modelOverride ?? modelDraft).trim()
     if (!activePreset.local && !keyDraft.trim() && !activeProvider.hasKey) {
-      setPresetNotice({ ok: false, message: '请先填入 API Key。' })
+      setPresetNotice({ ok: false, message: t('请先填入 API Key。') })
       return
     }
     if (!model) {
@@ -858,7 +908,7 @@ export function App(): JSX.Element {
         await detectLocalModels()
         return
       }
-      setPresetNotice({ ok: false, message: '请选择一个模型。' })
+      setPresetNotice({ ok: false, message: t('请选择一个模型。') })
       return
     }
     setPresetBusy(true)
@@ -885,12 +935,18 @@ export function App(): JSX.Element {
       if (result.ok) {
         setPresetNotice({
           ok: true,
-          message: `已启用 ${activePreset.name} · ${modelDisplayName(activePreset.id, model)}。连接正常，发现 ${result.models.length} 个模型。`
+          message: t('已启用 {name} · {model}。连接正常，发现 {count} 个模型。', {
+            name: activePresetName,
+            model: modelDisplayName(activePreset.id, model),
+            count: result.models.length
+          })
         })
       } else {
         setPresetNotice({
           ok: false,
-          message: `已保存，但连接测试失败：${result.error ?? '未知错误'}`
+          message: t('已保存，但连接测试失败：{error}', {
+            error: result.error ?? t('未知错误')
+          })
         })
       }
     } catch (error) {
@@ -907,22 +963,26 @@ export function App(): JSX.Element {
     <div className="shell">
       <div className="titlebar">
         <div className="brand">
-          <span className="brand-mark">注</span>
+          <img className="brand-mark" src={appIcon} alt="" />
           <div>
-            <strong>注解</strong>
-            <span>划词 AI 助手</span>
+            <strong>{t('注解')}</strong>
+            <span>{t('划词 AI 助手')}</span>
           </div>
         </div>
         <div className="titlebar-spacer" />
         <span className={`hook-pill ${state.hookStatus}`}>
           <span className="dot" />
-          {state.hookStatus === 'running' ? '取词服务运行中' : state.hookStatus === 'error' ? '取词服务异常' : '取词服务未运行'}
+          {state.hookStatus === 'running'
+            ? t('取词服务运行中')
+            : state.hookStatus === 'error'
+              ? t('取词服务异常')
+              : t('取词服务未运行')}
         </span>
         <div className="win-actions">
-          <button title="最小化" onClick={() => void window.zhujie.minimizeWindow()}>
+          <button title={t('最小化')} onClick={() => void window.zhujie.minimizeWindow()}>
             ─
           </button>
-          <button title="隐藏到托盘" onClick={() => void window.zhujie.hideWindow()}>
+          <button title={t('隐藏到托盘')} onClick={() => void window.zhujie.hideWindow()}>
             ×
           </button>
         </div>
@@ -938,18 +998,18 @@ export function App(): JSX.Element {
                 onClick={() => setTab(item.id)}
               >
                 <Icon name={item.icon} />
-                <span>{item.label}</span>
+                <span>{t(item.label)}</span>
               </button>
             ))}
           </nav>
           <div className="side-card">
             <div className="side-card-title">
               <span className={`live-dot ${settings.enabled ? 'on' : ''}`} />
-              {settings.enabled ? '划词注解已开启' : '划词注解已暂停'}
+              {settings.enabled ? t('划词注解已开启') : t('划词注解已暂停')}
             </div>
-            <p>选中任意文字，旁边会出现「注解」。</p>
+            <p>{t('选中任意文字，旁边会出现「注解」。')}</p>
             <label className="switch-row">
-              <span>总开关</span>
+              <span>{t('总开关')}</span>
               <input
                 type="checkbox"
                 className="switch"
@@ -965,19 +1025,19 @@ export function App(): JSX.Element {
             <section className="section">
               <header className="section-head">
                 <div>
-                  <h1>应用范围</h1>
-                  <p>决定哪些应用里选中文字时会出现「注解」小框。</p>
+                  <h1>{t('应用范围')}</h1>
+                  <p>{t('决定哪些应用里选中文字时会出现「注解」小框。')}</p>
                 </div>
               </header>
 
               {modelOptions.length === 0 && (
                 <div className="notice-card">
                   <div>
-                    <strong>还没有可用模型</strong>
-                    <p>先启动 Ollama 或 LM Studio，再点「测试 / 拉取模型」。也可以添加任意 OpenAI 兼容接口。</p>
+                    <strong>{t('还没有可用模型')}</strong>
+                    <p>{t('先启动 Ollama 或 LM Studio，再点「测试 / 拉取模型」。也可以添加任意 OpenAI 兼容接口。')}</p>
                   </div>
                   <button className="primary" onClick={() => setTab('models')}>
-                    去配置
+                    {t('去配置')}
                   </button>
                 </div>
               )}
@@ -987,28 +1047,30 @@ export function App(): JSX.Element {
                   className={settings.filterMode === 'all' ? 'choice active' : 'choice'}
                   onClick={() => void patch({ filterMode: 'all' })}
                 >
-                  <strong>全部应用</strong>
-                  <span>浏览器、PDF、Office、编辑器里都能用</span>
+                  <strong>{t('全部应用')}</strong>
+                  <span>{t('浏览器、PDF、Office、编辑器里都能用')}</span>
                 </button>
                 <button
                   className={settings.filterMode === 'whitelist' ? 'choice active' : 'choice'}
                   onClick={() => void patch({ filterMode: 'whitelist' })}
                 >
-                  <strong>仅指定应用</strong>
-                  <span>只在下面勾选的应用中出现</span>
+                  <strong>{t('仅指定应用')}</strong>
+                  <span>{t('只在下面勾选的应用中出现')}</span>
                 </button>
               </div>
 
               <div className="panel-card">
                 <div className="card-head">
-                  <h2>应用列表</h2>
+                  <h2>{t('应用列表')}</h2>
                   <div className="app-tools">
                     <span className="muted">
-                      {apps ? `${appRows.length} 个应用` : '扫描中…'}
-                      {runningCount > 0 ? ` · ${runningCount} 个运行中` : ''}
+                      {apps ? t('{count} 个应用', { count: appRows.length }) : t('扫描中…')}
+                      {runningCount > 0
+                        ? ` · ${t('{count} 个运行中', { count: runningCount })}`
+                        : ''}
                     </span>
                     <button className="link" onClick={() => void loadApps(true)} disabled={appsLoading}>
-                      {appsLoading ? '扫描中…' : '刷新'}
+                      {appsLoading ? t('扫描中…') : t('刷新')}
                     </button>
                   </div>
                 </div>
@@ -1016,32 +1078,32 @@ export function App(): JSX.Element {
                 <div className="app-search">
                   <input
                     value={appQuery}
-                    placeholder="搜索应用，例如 Chrome、微信、VS Code"
+                    placeholder={t('搜索应用，例如 Chrome、微信、VS Code')}
                     onChange={(event) => setAppQuery(event.target.value)}
                   />
                   {appQuery && (
                     <button className="link" onClick={() => setAppQuery('')}>
-                      清除
+                      {t('清除')}
                     </button>
                   )}
                 </div>
 
                 {appsError && (
                   <div className="test-error">
-                    扫描应用失败：{appsError}
+                    {t('扫描应用失败：{error}', { error: appsError })}
                     <button className="link" onClick={() => void loadApps(true)}>
-                      重试
+                      {t('重试')}
                     </button>
                   </div>
                 )}
 
-                {appsLoading && !apps && <p className="hint">正在扫描电脑上的应用…</p>}
+                {appsLoading && !apps && <p className="hint">{t('正在扫描电脑上的应用…')}</p>}
 
                 {visibleAppRows.length === 0 ? (
                   <div className="empty">
                     {appQuery
-                      ? '没有找到匹配的应用，换个关键词试试。'
-                      : '没有扫描到应用，可以在下面手动输入进程名。'}
+                      ? t('没有找到匹配的应用，换个关键词试试。')
+                      : t('没有扫描到应用，可以在下面手动输入进程名。')}
                   </div>
                 ) : (
                   <ul className="app-list tall">
@@ -1058,9 +1120,11 @@ export function App(): JSX.Element {
                           <span className="app-info">
                             <span className="app-name">
                               {row.label}
-                              {row.running && <span className="badge-running">运行中</span>}
+                              {row.running && <span className="badge-running">{t('运行中')}</span>}
                               {row.count > 0 && (
-                                <span className="badge-detected">用过 {row.count} 次</span>
+                                <span className="badge-detected">
+                                  {t('用过 {count} 次', { count: row.count })}
+                                </span>
                               )}
                             </span>
                             <span className="app-exe">
@@ -1070,9 +1134,9 @@ export function App(): JSX.Element {
                           </span>
                           <span className="app-meta">
                             {row.lastSeen
-                              ? `上次使用：${relativeTime(row.lastSeen)}`
+                              ? t('上次使用：{time}', { time: relativeTime(row.lastSeen) })
                               : row.installed
-                                ? '已安装'
+                                ? t('已安装')
                                 : ''}
                           </span>
                         </label>
@@ -1084,32 +1148,34 @@ export function App(): JSX.Element {
                 <div className="inline-form">
                   <input
                     value={appInput}
-                    placeholder="手动输入应用名或进程名，例如 chrome 或 WeChat"
+                    placeholder={t('手动输入应用名或进程名，例如 chrome 或 WeChat')}
                     onChange={(event) => setAppInput(event.target.value)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') addApp()
                     }}
                   />
                   <button onClick={addApp} disabled={!appInput.trim()}>
-                    添加
+                    {t('添加')}
                   </button>
                 </div>
                 <p className="hint">
                   {settings.filterMode === 'all'
-                    ? '当前是「全部应用」；切换到「仅指定应用」后，才能勾选下面的应用。'
-                    : '勾选后，只有这些应用里划词才会出现小框。'}
-                  勾选保存的是真实进程名（如 msedge.exe）；手动输入按进程名精确匹配，可省略 .exe。
-                  应用列表会自动扫描电脑上已安装和正在运行的程序；在注解面板和设置窗口内不会触发。
+                    ? t('当前是「全部应用」；切换到「仅指定应用」后，才能勾选下面的应用。')
+                    : t('勾选后，只有这些应用里划词才会出现小框。')}
+                  {t('勾选保存的是真实进程名（如 msedge.exe）；手动输入按进程名精确匹配，可省略 .exe。')}
+                  {t('应用列表会自动扫描电脑上已安装和正在运行的程序；在注解面板和设置窗口内不会触发。')}
                 </p>
               </div>
 
               {state.hookStatus === 'error' && (
                 <div className="warn-card">
-                  <strong>取词服务启动失败</strong>
+                  <strong>{t('取词服务启动失败')}</strong>
                   <p>{state.hookError}</p>
-                  <p className="muted">可尝试以管理员身份运行，或检查是否有安全软件拦截全局钩子。</p>
+                  <p className="muted">
+                    {t('可尝试以管理员身份运行，或检查是否有安全软件拦截全局钩子。')}
+                  </p>
                   <button className="ghost" disabled={hookBusy} onClick={() => void restartHook()}>
-                    {hookBusy ? '正在重启…' : '重启取词服务'}
+                    {hookBusy ? t('正在重启…') : t('重启取词服务')}
                   </button>
                 </div>
               )}
@@ -1120,14 +1186,54 @@ export function App(): JSX.Element {
             <section className="section">
               <header className="section-head">
                 <div>
-                  <h1>用哪家 AI</h1>
-                  <p>先选本机还是云端，再选服务商、选模型、填 API Key。接口地址不用管。</p>
+                  <h1>{t('用哪家 AI')}</h1>
+                  <p>{t('先选本机还是云端，再选服务商、选模型、填 API Key。接口地址不用管。')}</p>
                 </div>
               </header>
 
+              <div className="panel-card">
+                <div className="card-head">
+                  <h2>{t('语言')}</h2>
+                  <span className="muted">
+                    {state.locale === 'en-US' ? 'Chinese / English' : '中文 / English'}
+                  </span>
+                </div>
+                <label className="field">
+                  <span>{t('界面语言')}</span>
+                  <select
+                    value={settings.language}
+                    onChange={(event) =>
+                      void patch({
+                        language: event.target.value as 'system' | 'zh-CN' | 'en-US'
+                      })
+                    }
+                  >
+                    <option value="system">{t('跟随系统')}</option>
+                    <option value="zh-CN">{t('中文')}</option>
+                    <option value="en-US">English</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>{t('回答语言')}</span>
+                  <select
+                    value={settings.answerLanguage}
+                    onChange={(event) =>
+                      void patch({
+                        answerLanguage: event.target.value as 'auto' | 'zh-CN' | 'en-US'
+                      })
+                    }
+                  >
+                    <option value="auto">{t('跟随界面')}</option>
+                    <option value="zh-CN">{t('中文')}</option>
+                    <option value="en-US">English</option>
+                  </select>
+                </label>
+                {state.locale === 'en-US' && <p className="hint">{t('语言说明')}</p>}
+              </div>
+
               <div className="active-card">
                 <div className="active-main">
-                  <span className="muted">当前使用</span>
+                  <span className="muted">{t('当前使用')}</span>
                   <strong>{activeLabel}</strong>
                   <span className="active-model-name">
                     {settings.defaultModel
@@ -1135,19 +1241,19 @@ export function App(): JSX.Element {
                           activeProviderInfo?.presetId ?? activeProviderInfo?.id,
                           settings.defaultModel
                         )
-                      : '还没有选择模型'}
+                      : t('还没有选择模型')}
                     {settings.defaultModel && <MultiplierBadge value={activeMultiplier} />}
                   </span>
                   {modeMismatch && (
                     <span className="active-warn">
                       {activeIsLocal
-                        ? '已切到云端模式，但当前仍用本机模型；选一家云端服务并保存后生效。'
-                        : '已切到本机模式，云端模型会被拦截；请选择一个本机模型。'}
+                        ? t('已切到云端模式，但当前仍用本机模型；选一家云端服务并保存后生效。')
+                        : t('已切到本机模式，云端模型会被拦截；请选择一个本机模型。')}
                     </span>
                   )}
                 </div>
                 <span className={activeIsLocal ? 'pill' : 'pill warn'}>
-                  {activeIsLocal ? '仅本机' : '云端'}
+                  {activeIsLocal ? t('仅本机') : t('云端')}
                 </span>
               </div>
 
@@ -1156,22 +1262,22 @@ export function App(): JSX.Element {
                   className={settings.localOnly ? 'mode active' : 'mode'}
                   onClick={() => void changeMode(true)}
                 >
-                  <strong>本机模型</strong>
-                  <span>Ollama / LM Studio · 文字不离开电脑</span>
+                  <strong>{t('本机模型')}</strong>
+                  <span>{t('Ollama / LM Studio · 文字不离开电脑')}</span>
                 </button>
                 <button
                   className={!settings.localOnly ? 'mode active' : 'mode'}
                   onClick={() => void changeMode(false)}
                 >
-                  <strong>云端 AI</strong>
-                  <span>DeepSeek / 通义 / Kimi 等 · 需要 API Key</span>
+                  <strong>{t('云端 AI')}</strong>
+                  <span>{t('DeepSeek / 通义 / Kimi 等 · 需要 API Key')}</span>
                 </button>
               </div>
 
               <div className="panel-card">
                 <div className="card-head">
-                  <h2>选择服务商</h2>
-                  <span className="muted">{settings.localOnly ? '本机' : '云端'}</span>
+                  <h2>{t('选择服务商')}</h2>
+                  <span className="muted">{settings.localOnly ? t('本机') : t('云端')}</span>
                 </div>
                 <div className="preset-grid">
                   {visiblePresets.map((preset) => {
@@ -1190,30 +1296,30 @@ export function App(): JSX.Element {
                         onClick={() => selectPreset(preset.id, state)}
                       >
                         <span className="preset-name">
-                          {preset.name}
+                          {presetName(preset, state.locale)}
                           {(preset.free || (preset.freeModels?.length ?? 0) > 0) && (
-                            <span className="free-badge">免费</span>
+                            <span className="free-badge">{t('免费')}</span>
                           )}
                         </span>
-                        <span className="preset-tagline">{preset.tagline}</span>
+                        <span className="preset-tagline">{presetTagline(preset, state.locale)}</span>
                         <span className={configured ? 'preset-state ok' : 'preset-state'}>
-                          {configured ? '已配置' : '未配置'}
+                          {configured ? t('已配置') : t('未配置')}
                         </span>
                       </button>
                     )
                   })}
                 </div>
                 <p className="hint">
-                  标有「免费」的服务商或模型由服务商提供免费额度，具体额度和有效期以服务商页面为准。
+                  {t('标有「免费」的服务商或模型由服务商提供免费额度，具体额度和有效期以服务商页面为准。')}
                 </p>
               </div>
 
               {activePreset && activeProvider && (
                 <div className="panel-card setup-card">
                   <div className="card-head">
-                    <h2>{activePreset.name} 设置</h2>
+                    <h2>{activePresetName} {t('设置')}</h2>
                     <span className="muted">
-                      {activePreset.local ? '不用填 Key' : '需要 API Key'}
+                      {activePreset.local ? t('不用填 Key') : t('需要 API Key')}
                     </span>
                   </div>
 
@@ -1225,8 +1331,8 @@ export function App(): JSX.Element {
                         value={keyDraft}
                         placeholder={
                           activeProvider.hasKey
-                            ? '已保存，留空表示不修改'
-                            : activePreset.keyHint ?? '粘贴 API Key'
+                            ? t('已保存，留空表示不修改')
+                            : activePreset.keyHint ?? t('粘贴 API Key')
                         }
                         onChange={(event) => setKeyDraft(event.target.value)}
                       />
@@ -1237,23 +1343,23 @@ export function App(): JSX.Element {
                           target="_blank"
                           rel="noreferrer"
                         >
-                          没有 Key？去 {activePreset.name} 获取
+                          {t('没有 Key？去 {name} 获取', { name: activePresetName })}
                         </a>
                       )}
                     </label>
                   )}
 
                   <label className="field">
-                    <span>模型</span>
+                    <span>{t('模型')}</span>
                     {activeChoices.length > 0 ? (
                       <select
                         value={modelDraft}
                         onChange={(event) => setModelDraft(event.target.value)}
                       >
                         {modelDraft && !activeChoices.includes(modelDraft) && (
-                          <option value={modelDraft}>{modelDraft}（当前）</option>
+                          <option value={modelDraft}>{modelDraft}{t('（当前）')}</option>
                         )}
-                        {!modelDraft && <option value="">请选择模型</option>}
+                        {!modelDraft && <option value="">{t('请选择模型')}</option>}
                         {(() => {
                           const renderOption = (model: string): JSX.Element => (
                             <option key={model} value={model}>
@@ -1272,7 +1378,7 @@ export function App(): JSX.Element {
                           if (!activeModelGroups) return activeChoices.map(renderOption)
                           return activeModelGroups.map((entry) =>
                             entry.models.length > 0 ? (
-                              <optgroup key={entry.group} label={MODEL_GROUP_LABELS[entry.group]}>
+                              <optgroup key={entry.group} label={t(MODEL_GROUP_LABELS[entry.group])}>
                                 {entry.models.map(renderOption)}
                               </optgroup>
                             ) : null
@@ -1282,29 +1388,29 @@ export function App(): JSX.Element {
                     ) : (
                       <div className="model-empty">
                         {activePreset.local
-                          ? '还没检测到本机模型。点下面的按钮，会读取你已经下载的模型。'
-                          : '这个服务商没有预置模型，请手动填写模型名。'}
+                          ? t('还没检测到本机模型。点下面的按钮，会读取你已经下载的模型。')
+                          : t('这个服务商没有预置模型，请手动填写模型名。')}
                       </div>
                     )}
                   </label>
                   <p className="hint">
-                    模型旁的倍率以 deepseek-flash 为 1.00×，精确到 0.01×；按每百万 tokens 输入+输出价格估算，数字越小越省，仅用于横向比较，实际费用以用量页为准。
+                    {t('模型旁的倍率以 deepseek-flash 为 1.00×，精确到 0.01×；按每百万 tokens 输入+输出价格估算，数字越小越省，仅用于横向比较，实际费用以用量页为准。')}
                   </p>
                   {selectedPresetId === 'qwen' && (
                     <p className="hint">
-                      百炼返回的图片、语音、向量等不能用于文字对话的模型已自动过滤，列表只保留文字对话模型。
+                      {t('百炼返回的图片、语音、向量等不能用于文字对话的模型已自动过滤，列表只保留文字对话模型。')}
                     </p>
                   )}
                   <p className="hint">
-                    免费或轻量模型响应快，适合简单注解；复杂提问和连续追问建议选能力更强的模型。
+                    {t('免费或轻量模型响应快，适合简单注解；复杂提问和连续追问建议选能力更强的模型。')}
                   </p>
 
                   {!activePreset.local && (
                     <details className="mini-advanced">
-                      <summary>列表里没有我要的模型？手动填写</summary>
+                      <summary>{t('列表里没有我要的模型？手动填写')}</summary>
                       <input
                         value={modelDraft}
-                        placeholder="直接输入模型名，例如 deepseek-flash"
+                        placeholder={t('直接输入模型名，例如 deepseek-flash')}
                         onChange={(event) => setModelDraft(event.target.value)}
                       />
                     </details>
@@ -1317,12 +1423,12 @@ export function App(): JSX.Element {
                       onClick={() => void savePresetSettings()}
                     >
                       {presetBusy
-                        ? '处理中…'
+                        ? t('处理中…')
                         : activePreset.local
                           ? modelDraft
-                            ? '保存并使用'
-                            : '检测本机模型并启用'
-                          : '保存并测试'}
+                            ? t('保存并使用')
+                            : t('检测本机模型并启用')
+                          : t('保存并测试')}
                     </button>
                     {activePreset.local && (
                       <button
@@ -1330,13 +1436,15 @@ export function App(): JSX.Element {
                         disabled={presetBusy}
                         onClick={() => void detectLocalModels()}
                       >
-                        重新检测模型
+                        {t('重新检测模型')}
                       </button>
                     )}
                     <span className="muted">
                       {activePreset.local
-                        ? '只访问本机端口，文字不离开电脑。'
-                        : `选中的文字会发送给 ${activePreset.name}，请勿用于敏感内容。`}
+                        ? t('只访问本机端口，文字不离开电脑。')
+                        : t('选中的文字会发送给 {name}，请勿用于敏感内容。', {
+                            name: activePresetName
+                          })}
                     </span>
                   </div>
 
@@ -1348,106 +1456,106 @@ export function App(): JSX.Element {
 
                   <details className="mini-advanced provider-guide">
                     <summary>
-                      怎么配置 {activePreset.name}
-                      {activePreset.local ? '' : '、怎么购买 tokens'}
+                      {t('怎么配置 {name}', { name: activePresetName })}
+                      {activePreset.local ? '' : t('、怎么购买 tokens')}
                     </summary>
                     <ol className="guide-steps">
-                      {activePreset.guide.steps.map((step) => (
+                      {(activeGuide?.steps ?? []).map((step) => (
                         <li key={step}>{step}</li>
                       ))}
                     </ol>
                     <div className="guide-links">
                       {activePreset.keyUrl && (
                         <a href={activePreset.keyUrl} target="_blank" rel="noreferrer">
-                          获取 API Key
+                          {t('获取 API Key')}
                         </a>
                       )}
-                      {activePreset.guide.billingUrl && (
+                      {activeGuide?.billingUrl && (
                         <a
-                          href={activePreset.guide.billingUrl}
+                          href={activeGuide.billingUrl}
                           target="_blank"
                           rel="noreferrer"
                         >
-                          {activePreset.guide.billingLabel ?? '充值 / 购买 tokens'}
+                          {activeGuide.billingLabel ?? t('充值 / 购买 tokens')}
                         </a>
                       )}
                     </div>
-                    {activePreset.guide.note && (
-                      <p className="hint">{activePreset.guide.note}</p>
+                    {activeGuide?.note && (
+                      <p className="hint">{activeGuide.note}</p>
                     )}
                   </details>
                 </div>
               )}
 
               <details className="advanced-block">
-                <summary>高级：手动填写接口地址（一般不用）</summary>
+                <summary>{t('高级：手动填写接口地址（一般不用）')}</summary>
                 <p className="hint">
-                  只有在使用公司内网、自建代理，或上面的服务商里没有你要的接口时，才需要改这里。
+                  {t('只有在使用公司内网、自建代理，或上面的服务商里没有你要的接口时，才需要改这里。')}
                 </p>
 
                 <details className="mini-advanced provider-guide">
-                  <summary>怎么配置自定义接口、怎么购买 tokens</summary>
+                  <summary>{t('怎么配置自定义接口、怎么购买 tokens')}</summary>
                   <ol className="guide-steps">
-                    <li>向服务商获取三样东西：Base URL、API Key、模型名。</li>
+                    <li>{t('向服务商获取三样东西：Base URL、API Key、模型名。')}</li>
                     <li>
-                      Base URL 一般以 <code>/v1</code> 结尾；不确定时看服务商文档。
+                      {t('Base URL 一般以')} <code>/v1</code> {t('结尾；不确定时看服务商文档。')}
                     </li>
-                    <li>在服务商控制台充值或购买 tokens 后，把 Key 和模型名填到上面的表单。</li>
-                    <li>保存后点「测试」，能拉到模型列表就说明配置成功。</li>
+                    <li>{t('在服务商控制台充值或购买 tokens 后，把 Key 和模型名填到上面的表单。')}</li>
+                    <li>{t('保存后点「测试」，能拉到模型列表就说明配置成功。')}</li>
                   </ol>
                   <p className="hint">
-                    如果是中转或聚合服务，确认它兼容 OpenAI 协议；不要购买来源不明的低价 Key。
+                    {t('如果是中转或聚合服务，确认它兼容 OpenAI 协议；不要购买来源不明的低价 Key。')}
                   </p>
                 </details>
 
                 {editor && (
                   <div className="panel-card editor">
                     <div className="card-head">
-                      <h2>{editor.id ? '编辑服务' : '添加服务'}</h2>
+                      <h2>{editor.id ? t('编辑服务') : t('添加服务')}</h2>
                       <button className="link" onClick={() => setEditor(null)}>
-                        取消
+                        {t('取消')}
                       </button>
                     </div>
                     <div className="form-grid">
                       <label>
-                        <span>名称</span>
+                        <span>{t('名称')}</span>
                         <input
                           value={editor.name}
-                          placeholder="例如 公司内网模型"
+                          placeholder={t('例如 公司内网模型')}
                           onChange={(event) => setEditor({ ...editor, name: event.target.value })}
                         />
                       </label>
                       <label>
-                        <span>协议</span>
+                        <span>{t('协议')}</span>
                         <select
                           value={editor.kind}
                           onChange={(event) =>
                             setEditor({ ...editor, kind: event.target.value as ProviderKind })
                           }
                         >
-                          <option value="openai">OpenAI 兼容</option>
-                          <option value="ollama">Ollama 原生</option>
+                          <option value="openai">{t('OpenAI 兼容')}</option>
+                          <option value="ollama">{t('Ollama 原生')}</option>
                         </select>
                       </label>
                       <label className="full">
                         <span>Base URL</span>
                         <input
                           value={editor.baseUrl}
-                          placeholder="http://127.0.0.1:11434 或 http://127.0.0.1:1234/v1"
+                          placeholder="http://127.0.0.1:11434 or http://127.0.0.1:1234/v1"
                           onChange={(event) => setEditor({ ...editor, baseUrl: event.target.value })}
                         />
                       </label>
                       <label className="full">
-                        <span>API Key（可选，保存在本机密钥存储）</span>
+                        <span>{t('API Key（可选，保存在本机密钥存储）')}</span>
                         <input
                           type="password"
                           value={editor.apiKey}
-                          placeholder="留空表示不修改已保存的密钥"
+                          placeholder={t('留空表示不修改已保存的密钥')}
                           onChange={(event) => setEditor({ ...editor, apiKey: event.target.value })}
                         />
                       </label>
                       <label>
-                        <span>输入价格（元 / 百万 tokens）</span>
+                        <span>{t('输入价格（元 / 百万 tokens）')}</span>
                         <input
                           type="number"
                           min="0"
@@ -1459,7 +1567,7 @@ export function App(): JSX.Element {
                         />
                       </label>
                       <label>
-                        <span>输出价格（元 / 百万 tokens）</span>
+                        <span>{t('输出价格（元 / 百万 tokens）')}</span>
                         <input
                           type="number"
                           min="0"
@@ -1471,14 +1579,14 @@ export function App(): JSX.Element {
                         />
                       </label>
                     </div>
-                    <p className="hint">费用按这里的价格估算；内置服务商已带默认价目，本机模型为 0。</p>
+                    <p className="hint">{t('费用按这里的价格估算；内置服务商已带默认价目，本机模型为 0。')}</p>
                     <div className="form-actions">
                       <button
                         className="primary"
                         disabled={savingProvider}
                         onClick={() => void saveProvider()}
                       >
-                        {savingProvider ? '保存中…' : '保存'}
+                        {savingProvider ? t('保存中…') : t('保存')}
                       </button>
                       {editor.id && (
                         <button
@@ -1491,10 +1599,10 @@ export function App(): JSX.Element {
                               baseUrl: editor.baseUrl,
                               apiKey: null
                             })
-                            flash('已清除密钥')
+                            flash(t('已清除密钥'))
                           }}
                         >
-                          清除密钥
+                          {t('清除密钥')}
                         </button>
                       )}
                     </div>
@@ -1523,10 +1631,10 @@ export function App(): JSX.Element {
                           })
                         }
                         onRemove={async () => {
-                          if (!window.confirm(`删除「${provider.name}」？`)) return
+                          if (!window.confirm(t('删除「{name}」？', { name: provider.name }))) return
                           try {
                             setState(await window.zhujie.removeProvider(provider.id))
-                            flash('已删除')
+                            flash(t('已删除'))
                           } catch (error) {
                             flash(readableError(error))
                           }
@@ -1534,7 +1642,7 @@ export function App(): JSX.Element {
                         onUseModel={(model) => {
                           void patch(
                             { defaultProviderId: provider.id, defaultModel: model },
-                            `默认模型：${model}`
+                            t('默认模型：{model}', { model })
                           )
                         }}
                         currentModel={
@@ -1550,7 +1658,7 @@ export function App(): JSX.Element {
                     setEditor({ name: '', kind: 'openai', baseUrl: '', apiKey: '', priceIn: 0, priceOut: 0 })
                   }
                 >
-                  添加自定义服务
+                  {t('添加自定义服务')}
                 </button>
               </details>
             </section>
@@ -1560,34 +1668,31 @@ export function App(): JSX.Element {
             <section className="section">
               <header className="section-head">
                 <div>
-                  <h1>注解提示词</h1>
-                  <p>作为系统提示词发送给模型；选中的文字会作为用户消息附在后面。</p>
+                  <h1>{t('注解提示词')}</h1>
+                  <p>{t('作为系统提示词发送给模型；选中的文字会作为用户消息附在后面。')}</p>
                 </div>
               </header>
 
               <div className="notice-card">
                 <div>
-                  <strong>回答顺序（应用强制执行）</strong>
-                  <p>
-                    回答顺序由应用按「词 / 问题 / 段落」自动决定，旧提示词不会改变这个顺序；
-                    点「恢复默认」可换成简洁模板，模板只保留你的风格偏好。
-                  </p>
+                  <strong>{t('回答顺序（应用强制执行）')}</strong>
+                  <p>{t('回答顺序由应用按「词 / 问题 / 段落」自动决定，旧提示词不会改变这个顺序；点「恢复默认」可换成简洁模板，模板只保留你的风格偏好。')}</p>
                 </div>
                 <button
                   className="ghost"
                   onClick={() => {
-                    setPromptDraft(DEFAULT_PROMPT)
+                    setPromptDraft(state.locale === 'en-US' ? DEFAULT_PROMPT_EN : DEFAULT_PROMPT)
                     setPromptDirty(true)
                   }}
                 >
-                  套用模板
+                  {t('套用模板')}
                 </button>
               </div>
 
               <div className="panel-card">
                 <div className="card-head">
-                  <h2>系统提示词</h2>
-                  <span className="muted">{promptDraft.length} 字</span>
+                  <h2>{t('系统提示词')}</h2>
+                  <span className="muted">{t('{count} 字', { count: promptDraft.length })}</span>
                 </div>
                 <textarea
                   className="prompt-box"
@@ -1600,24 +1705,24 @@ export function App(): JSX.Element {
                 />
                 <div className="prompt-foot">
                   <span className="muted">
-                    建议保留“Markdown / 300 字以内”之类的约束，面板显示更稳定。
+                    {t('建议保留“Markdown / 300 字以内”之类的约束，面板显示更稳定。')}
                   </span>
                   <div className="head-actions">
                     <button
                       className="ghost"
                       onClick={() => {
-                        setPromptDraft(DEFAULT_PROMPT)
+                        setPromptDraft(state.locale === 'en-US' ? DEFAULT_PROMPT_EN : DEFAULT_PROMPT)
                         setPromptDirty(true)
                       }}
                     >
-                      恢复默认
+                      {t('恢复默认')}
                     </button>
                     <button
                       className="primary"
                       disabled={!promptDirty}
                       onClick={() => void savePrompt()}
                     >
-                      保存
+                      {t('保存')}
                     </button>
                   </div>
                 </div>
@@ -1625,7 +1730,7 @@ export function App(): JSX.Element {
 
               <div className="panel-card">
                 <div className="card-head">
-                  <h2>结合上下文</h2>
+                  <h2>{t('结合上下文')}</h2>
                   <input
                     type="checkbox"
                     className="switch"
@@ -1634,11 +1739,12 @@ export function App(): JSX.Element {
                   />
                 </div>
                 <p className="muted">
-                  开启后，点「注解 / 提问」时会读取选中位置前后各 {settings.contextChars} 字，把
-                  【选中】部分标出来后一起发给模型。只读取当前应用的无障碍文本，不截屏；取不到时自动只发选中文字。
+                  {t('开启后，点「注解 / 提问」时会读取选中位置前后各 {count} 字，把【选中】部分标出来后一起发给模型。只读取当前应用的无障碍文本，不截屏；取不到时自动只发选中文字。', {
+                    count: settings.contextChars
+                  })}
                 </p>
                 <div className="context-length">
-                  <span>前后各</span>
+                  <span>{t('前后各')}</span>
                   <input
                     key={settings.contextChars}
                     type="number"
@@ -1660,23 +1766,25 @@ export function App(): JSX.Element {
                       if (event.key === 'Enter') event.currentTarget.blur()
                     }}
                   />
-                  <span>字</span>
+                  <span>{t('字')}</span>
                   <span className="muted">
-                    会多发送约 2 倍上下文，费用通常为原来的 1.5–2 倍。
+                    {t('会多发送约 2 倍上下文，费用通常为原来的 1.5–2 倍。')}
                   </span>
                 </div>
               </div>
 
               <div className="panel-card">
                 <div className="card-head">
-                  <h2>单次发送上限</h2>
-                  <span className="muted">当前 {settings.maxChars} 字</span>
+                  <h2>{t('单次发送上限')}</h2>
+                  <span className="muted">
+                    {t('当前 {count} 字', { count: settings.maxChars })}
+                  </span>
                 </div>
                 <p className="muted">
-                  选中文字超过上限时只发送前面的部分，注解面板会明确提示「已截断」，不会让你误以为整段都发送了。
+                  {t('选中文字超过上限时只发送前面的部分，注解面板会明确提示「已截断」，不会让你误以为整段都发送了。')}
                 </p>
                 <div className="context-length">
-                  <span>最多</span>
+                  <span>{t('最多')}</span>
                   <input
                     key={settings.maxChars}
                     type="number"
@@ -1697,7 +1805,7 @@ export function App(): JSX.Element {
                       if (event.key === 'Enter') event.currentTarget.blur()
                     }}
                   />
-                  <span>字</span>
+                  <span>{t('字')}</span>
                 </div>
               </div>
 
@@ -1708,9 +1816,11 @@ export function App(): JSX.Element {
             <section className="section">
               <header className="section-head">
                 <div>
-                  <h1>历史记录</h1>
+                  <h1>{t('历史记录')}</h1>
                   <p>
-                    注解和提问都会保存在本机，最多保留 {HISTORY_LIMIT} 条；满了可以压缩成综合摘要。
+                    {t('注解和提问都会保存在本机，最多保留 {count} 条；满了可以压缩成综合摘要。', {
+                      count: HISTORY_LIMIT
+                    })}
                   </p>
                 </div>
                 <button
@@ -1718,17 +1828,21 @@ export function App(): JSX.Element {
                   disabled={!historyItems?.length}
                   onClick={() => void clearHistory()}
                 >
-                  清空记录
+                  {t('清空记录')}
                 </button>
               </header>
 
               {historyItems && historyItems.length >= HISTORY_LIMIT && (
                 <div className="notice-card">
                   <div>
-                    <strong>历史已满 {HISTORY_LIMIT} 条</strong>
+                    <strong>
+                      {t('历史已满 {count} 条', { count: HISTORY_LIMIT })}
+                    </strong>
                     <p>
-                      可以把最早的 {HISTORY_LIMIT - HISTORY_KEEP_RECENT} 条压缩成一份综合摘要，保留最近{' '}
-                      {HISTORY_KEEP_RECENT} 条。压缩会调用当前模型，可能需要一点时间并产生费用。
+                      {t('可以把最早的 {old} 条压缩成一份综合摘要，保留最近 {keep} 条。压缩会调用当前模型，可能需要一点时间并产生费用。', {
+                        old: HISTORY_LIMIT - HISTORY_KEEP_RECENT,
+                        keep: HISTORY_KEEP_RECENT
+                      })}
                     </p>
                   </div>
                   <button
@@ -1736,7 +1850,7 @@ export function App(): JSX.Element {
                     disabled={compressState?.busy}
                     onClick={() => void compressHistory()}
                   >
-                    {compressState?.busy ? '压缩中…' : '压缩旧记录'}
+                    {compressState?.busy ? t('压缩中…') : t('压缩旧记录')}
                   </button>
                 </div>
               )}
@@ -1763,8 +1877,8 @@ export function App(): JSX.Element {
               {summaries.length > 0 && (
                 <div className="summary-list">
                   <div className="summary-list-head">
-                    <strong>综合摘要</strong>
-                    <span className="muted">旧记录压缩后会保留在这里</span>
+                    <strong>{t('综合摘要')}</strong>
+                    <span className="muted">{t('旧记录压缩后会保留在这里')}</span>
                   </div>
                   {summaries.map((summary) => (
                     <SummaryCard key={summary.id} summary={summary} />
@@ -1775,29 +1889,33 @@ export function App(): JSX.Element {
               <div className="history-toolbar">
                 <input
                   value={historyQuery}
-                  placeholder="搜索选中的文字、问题、回答或应用"
+                  placeholder={t('搜索选中的文字、问题、回答或应用')}
                   onChange={(event) => setHistoryQuery(event.target.value)}
                 />
-                <span className="muted">共 {historyItems?.length ?? 0} 条</span>
+                <span className="muted">
+                  {t('共 {count} 条', { count: historyItems?.length ?? 0 })}
+                </span>
                 <label
                   className="history-toggle"
-                  title="关闭后新的注解/提问不再写入历史，已有记录保留"
+                  title={t('关闭后新的注解/提问不再写入历史，已有记录保留')}
                 >
                   <input
                     type="checkbox"
                     checked={settings.historyEnabled}
                     onChange={(event) => void patch({ historyEnabled: event.target.checked })}
                   />
-                  记录新历史
+                  {t('记录新历史')}
                 </label>
               </div>
 
               {!historyItems || historyItems.length === 0 ? (
                 <div className="panel-card empty tall">
-                  还没有历史记录。选中文字做一次注解或提问后，这里会出现记录。
+                  {t('还没有历史记录。选中文字做一次注解或提问后，这里会出现记录。')}
                 </div>
               ) : filteredThreads.length === 0 ? (
-                <div className="panel-card empty tall">没有匹配的记录，换个关键词试试。</div>
+                <div className="panel-card empty tall">
+                  {t('没有匹配的记录，换个关键词试试。')}
+                </div>
               ) : (
                 <div className="history-layout">
                   <div className="history-list">
@@ -1815,7 +1933,7 @@ export function App(): JSX.Element {
                               thread.latest.mode === 'ask' ? 'history-mode ask' : 'history-mode'
                             }
                           >
-                            {thread.latest.mode === 'ask' ? '提问' : '注解'}
+                            {thread.latest.mode === 'ask' ? t('提问') : t('注解')}
                           </span>
                           <span className="muted">{fmtTime(thread.latest.ts)}</span>
                         </div>
@@ -1824,7 +1942,9 @@ export function App(): JSX.Element {
                         </div>
                         <div className="history-meta">
                           {thread.latest.programName} · {thread.latest.model}
-                          {thread.items.length > 1 ? ` · ${thread.items.length} 轮问答` : ''}
+                          {thread.items.length > 1
+                            ? ` · ${t('{count} 轮问答', { count: thread.items.length })}`
+                            : ''}
                         </div>
                       </button>
                     ))}
@@ -1834,7 +1954,9 @@ export function App(): JSX.Element {
                     <div className="history-detail">
                       <div className="history-detail-head">
                         <div>
-                          <strong>连续对话 · {selectedThread.items.length} 轮</strong>
+                          <strong>
+                            {t('连续对话 · {count} 轮', { count: selectedThread.items.length })}
+                          </strong>
                           <span className="muted">
                             {fmtTime(selectedThread.latest.ts)} ·{' '}
                             {selectedThread.latest.programName} · {selectedThread.latest.model}
@@ -1845,7 +1967,7 @@ export function App(): JSX.Element {
                             className="link"
                             onClick={() => void copyHistoryThread(selectedThread)}
                           >
-                            复制完整对话
+                            {t('复制完整对话')}
                           </button>
                         </div>
                       </div>
@@ -1866,7 +1988,7 @@ export function App(): JSX.Element {
                                   record.mode === 'ask' ? 'history-mode ask' : 'history-mode'
                                 }
                               >
-                                {record.mode === 'ask' ? '追问' : '注解'}
+                                {record.mode === 'ask' ? t('追问') : t('注解')}
                               </span>
                               <span className="muted">{fmtTime(record.ts)}</span>
                               <span className="foot-spacer" />
@@ -1875,13 +1997,13 @@ export function App(): JSX.Element {
                                   className="link"
                                   onClick={() => void toggleHistoryFavorite(record)}
                                 >
-                                  {favorited ? '已收藏' : '收藏'}
+                                  {favorited ? t('已收藏') : t('收藏')}
                                 </button>
                                 <button
                                   className="link danger"
                                   onClick={() => void removeHistory(record.id)}
                                 >
-                                  删除
+                                  {t('删除')}
                                 </button>
                               </div>
                             </div>
@@ -1890,7 +2012,7 @@ export function App(): JSX.Element {
                             )}
                             {record.mode === 'ask' && (
                               <div className="asked-question">
-                                <span>你的问题</span>
+                                <span>{t('你的问题')}</span>
                                 <p>{record.question}</p>
                               </div>
                             )}
@@ -1904,7 +2026,7 @@ export function App(): JSX.Element {
                               {record.totalTokens.toLocaleString()} tokens ·{' '}
                               {formatCny(record.cost)}
                               {record.contextChars
-                                ? ` · 结合上下文 ${record.contextChars} 字`
+                                ? ` · ${t('结合上下文 {count} 字', { count: record.contextChars })}`
                                 : ''}
                             </div>
                           </div>
@@ -1921,21 +2043,21 @@ export function App(): JSX.Element {
             <section className="section">
               <header className="section-head">
                 <div>
-                  <h1>收藏</h1>
-                  <p>在注解面板点右上角星星，收藏当前的问答；只保存在本机。</p>
+                  <h1>{t('收藏')}</h1>
+                  <p>{t('在注解面板点右上角星星，收藏当前的问答；只保存在本机。')}</p>
                 </div>
                 <button
                   className="ghost danger"
                   disabled={!favorites?.length}
                   onClick={() => void clearFavorites()}
                 >
-                  清空收藏
+                  {t('清空收藏')}
                 </button>
               </header>
 
               {!favorites || favorites.length === 0 ? (
                 <div className="panel-card empty tall">
-                  还没有收藏。打开一条注解或提问，点右上角的星星即可收藏当前问答。
+                  {t('还没有收藏。打开一条注解或提问，点右上角的星星即可收藏当前问答。')}
                 </div>
               ) : (
                 <div className="favorite-list">
@@ -1955,60 +2077,66 @@ export function App(): JSX.Element {
             <section className="section">
               <header className="section-head">
                 <div>
-                  <h1>用量统计</h1>
-                  <p>记录每次注解/提问的模型、token、费用与耗时，数据只写在本机。</p>
+                  <h1>{t('用量统计')}</h1>
+                  <p>{t('记录每次注解/提问的模型、token、费用与耗时，数据只写在本机。')}</p>
                 </div>
                 <div className="head-actions">
                   <button
                     className="ghost"
-                    onClick={() => void refreshUsage().then(() => flash('用量已刷新'))}
+                    onClick={() => void refreshUsage().then(() => flash(t('用量已刷新')))}
                   >
-                    刷新
+                    {t('刷新')}
                   </button>
                   <button className="ghost danger" onClick={() => void clearUsage()}>
-                    清空记录
+                    {t('清空记录')}
                   </button>
                 </div>
               </header>
 
               {!usage || usage.total.requests === 0 ? (
                 <div className="panel-card empty tall">
-                  还没有用量。选中一段文字、点开「注解」后，这里会按模型和应用记录 token。
+                  {t('还没有用量。选中一段文字、点开「注解」后，这里会按模型和应用记录 token。')}
                 </div>
               ) : (
                 <>
                   <div className="stat-grid">
                     <div className="stat">
-                      <span>今日 tokens</span>
+                      <span>{t('今日 tokens')}</span>
                       <strong>{fmtNum(usage.today.tokens)}</strong>
-                      <small>{usage.today.requests} 次 · {formatCny(usage.today.cost)}</small>
+                      <small>
+                        {t('{count} 次', { count: usage.today.requests })} ·{' '}
+                        {formatCny(usage.today.cost)}
+                      </small>
                     </div>
                     <div className="stat">
-                      <span>累计 tokens</span>
+                      <span>{t('累计 tokens')}</span>
                       <strong>{fmtNum(usage.total.tokens)}</strong>
-                      <small>{usage.total.requests} 次 · {formatCny(usage.total.cost)}</small>
+                      <small>
+                        {t('{count} 次', { count: usage.total.requests })} ·{' '}
+                        {formatCny(usage.total.cost)}
+                      </small>
                     </div>
                     <div className="stat">
-                      <span>累计花费</span>
+                      <span>{t('累计花费')}</span>
                       <strong>{formatCny(usage.total.cost)}</strong>
-                      <small>人民币估算</small>
+                      <small>{t('人民币估算')}</small>
                     </div>
                     <div className="stat">
-                      <span>平均耗时</span>
+                      <span>{t('平均耗时')}</span>
                       <strong>{(usage.avgLatencyMs / 1000).toFixed(1)}s</strong>
-                      <small>仅统计成功请求</small>
+                      <small>{t('仅统计成功请求')}</small>
                     </div>
                     <div className="stat">
-                      <span>使用模型</span>
+                      <span>{t('使用模型')}</span>
                       <strong>{usage.byModel.length}</strong>
-                      <small>覆盖 {usage.byApp.length} 个应用</small>
+                      <small>{t('覆盖 {count} 个应用', { count: usage.byApp.length })}</small>
                     </div>
                   </div>
 
                   <div className="panel-card">
                     <div className="card-head">
-                      <h2>近 14 天</h2>
-                      <span className="muted">tokens / 天</span>
+                      <h2>{t('近 14 天')}</h2>
+                      <span className="muted">{t('tokens / 天')}</span>
                     </div>
                     <div className="chart">
                       {(() => {
@@ -2035,15 +2163,15 @@ export function App(): JSX.Element {
                   <div className="two-col">
                     <div className="panel-card">
                       <div className="card-head">
-                        <h2>按模型</h2>
+                        <h2>{t('按模型')}</h2>
                       </div>
                       <table className="data-table numeric-3">
                         <thead>
                           <tr>
-                            <th>模型</th>
-                            <th>次数</th>
+                            <th>{t('模型')}</th>
+                            <th>{t('次数')}</th>
                             <th>tokens</th>
-                            <th>花费</th>
+                            <th>{t('花费')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2061,15 +2189,15 @@ export function App(): JSX.Element {
 
                     <div className="panel-card">
                       <div className="card-head">
-                        <h2>按应用</h2>
+                        <h2>{t('按应用')}</h2>
                       </div>
                       <table className="data-table numeric-3">
                         <thead>
                           <tr>
-                            <th>应用</th>
-                            <th>次数</th>
+                            <th>{t('应用')}</th>
+                            <th>{t('次数')}</th>
                             <th>tokens</th>
-                            <th>花费</th>
+                            <th>{t('花费')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -2088,19 +2216,19 @@ export function App(): JSX.Element {
 
                   <div className="panel-card">
                     <div className="card-head">
-                      <h2>最近记录</h2>
-                      <span className="muted">最多显示 50 条</span>
+                      <h2>{t('最近记录')}</h2>
+                      <span className="muted">{t('最多显示 50 条')}</span>
                     </div>
                     <table className="data-table recent-table">
                       <thead>
                         <tr>
-                          <th>时间</th>
-                          <th>应用</th>
-                          <th>模型</th>
+                          <th>{t('时间')}</th>
+                          <th>{t('应用')}</th>
+                          <th>{t('模型')}</th>
                           <th>tokens</th>
-                          <th>花费</th>
-                          <th>耗时</th>
-                          <th>状态</th>
+                          <th>{t('花费')}</th>
+                          <th>{t('耗时')}</th>
+                          <th>{t('状态')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -2117,7 +2245,7 @@ export function App(): JSX.Element {
                             <td>{Math.round(record.latencyMs)}ms</td>
                             <td>
                               <span className={record.ok ? 'status ok' : 'status bad'}>
-                                {record.ok ? '成功' : '失败'}
+                                {record.ok ? t('成功') : t('失败')}
                               </span>
                             </td>
                           </tr>
@@ -2125,7 +2253,7 @@ export function App(): JSX.Element {
                       </tbody>
                     </table>
                     <p className="hint">
-                      费用按内置价目估算（人民币），本机模型为 0；自定义接口可在「高级」里填写输入/输出价格。
+                      {t('费用按内置价目估算（人民币），本机模型为 0；自定义接口可在「高级」里填写输入/输出价格。')}
                     </p>
                   </div>
                 </>
@@ -2137,45 +2265,47 @@ export function App(): JSX.Element {
             <section className="section">
               <header className="section-head">
                 <div>
-                  <h1>关于</h1>
-                  <p>划词注解 · 本地优先的阅读辅助工具。</p>
+                  <h1>{t('关于')}</h1>
+                  <p>{t('划词注解 · 本地优先的阅读辅助工具。')}</p>
                 </div>
               </header>
 
               <div className="panel-card about-grid">
                 <div>
-                  <span className="muted">版本</span>
+                  <span className="muted">{t('版本')}</span>
                   <strong>{state.version}</strong>
                 </div>
                 <div>
-                  <span className="muted">制作人</span>
+                  <span className="muted">{t('制作')}</span>
                   <strong>piona</strong>
                 </div>
                 <div>
-                  <span className="muted">平台</span>
+                  <span className="muted">{t('平台')}</span>
                   <strong>{state.platform}</strong>
                 </div>
                 <div>
-                  <span className="muted">取词服务</span>
+                  <span className="muted">{t('取词服务')}</span>
                   <div className="copy-line">
-                    <strong>{state.hookStatus === 'running' ? '运行中' : state.hookStatus}</strong>
+                    <strong>
+                      {state.hookStatus === 'running' ? t('运行中') : state.hookStatus}
+                    </strong>
                     <button className="link" disabled={hookBusy} onClick={() => void restartHook()}>
-                      {hookBusy ? '重启中…' : '重启'}
+                      {hookBusy ? t('重启中…') : t('重启')}
                     </button>
                   </div>
                 </div>
                 <div>
-                  <span className="muted">数据目录</span>
+                  <span className="muted">{t('数据目录')}</span>
                   <div className="copy-line">
                     <code title={state.dataDir}>{state.dataDir}</code>
                     <button
                       className="link"
                       onClick={() => {
                         void window.zhujie.writeClipboard(state.dataDir)
-                        flash('路径已复制')
+                        flash(t('路径已复制'))
                       }}
                     >
-                      复制
+                      {t('复制')}
                     </button>
                   </div>
                 </div>
@@ -2183,24 +2313,38 @@ export function App(): JSX.Element {
 
               <div className="panel-card update-card">
                 <div className="card-head">
-                  <h2>版本更新</h2>
-                  <span className="muted">当前 v{state.version}</span>
+                  <h2>{t('版本更新')}</h2>
+                  <span className="muted">{t('当前 v{version}', { version: state.version })}</span>
                 </div>
                 <p className="muted">
-                  {state.update.phase === 'idle' && '应用会在启动后自动检查 GitHub Releases。'}
-                  {state.update.phase === 'checking' && '正在检查更新…'}
+                  {state.update.phase === 'idle' &&
+                    t('应用会在启动后自动检查 GitHub Releases。')}
+                  {state.update.phase === 'checking' && t('正在检查更新…')}
                   {state.update.phase === 'latest' &&
-                    `${state.update.message ?? '已是最新版本'}${state.update.message?.includes('。') ? '' : '。'}`}
+                    (state.update.latestVersion === state.version
+                      ? t('已是最新版本 v{version}', { version: state.version })
+                      : t('线上最新 v{latest}；当前本地 v{current}（本地构建较新）', {
+                          latest: state.update.latestVersion ?? '',
+                          current: state.version
+                        }))}
                   {state.update.phase === 'available' &&
-                    `发现新版本 v${state.update.latestVersion ?? ''}。${
-                      settings.autoDownloadUpdates ? '正在自动下载…' : '点击「下载更新」后再下载。'
-                    }`}
+                    t('发现新版本 v{version}。{action}', {
+                      version: state.update.latestVersion ?? '',
+                      action: settings.autoDownloadUpdates
+                        ? t('正在自动下载…')
+                        : t('点击「下载更新」后再下载。')
+                    })}
                   {state.update.phase === 'downloading' &&
-                    `正在下载 v${state.update.latestVersion ?? ''}（${updateProgress?.progress ?? state.update.progress ?? 0}%）。`}
+                    t('正在下载 v{version}（{percent}%）。', {
+                      version: state.update.latestVersion ?? '',
+                      percent: updateProgress?.progress ?? state.update.progress ?? 0
+                    })}
                   {state.update.phase === 'ready' &&
-                    `v${state.update.latestVersion ?? ''} 已下载并通过 SHA-256 校验；重启后替换程序文件，配置和历史会保留。`}
+                    t('v{version} 已下载并通过 SHA-256 校验；重启后替换程序文件，配置和历史会保留。', {
+                      version: state.update.latestVersion ?? ''
+                    })}
                   {state.update.phase === 'error' &&
-                    (state.update.latestVersion ? '更新未完成。' : '检查更新失败。')}
+                    (state.update.latestVersion ? t('更新未完成。') : t('检查更新失败。'))}
                 </p>
                 {state.update.phase === 'downloading' && (
                   <div className="update-progress">
@@ -2223,16 +2367,16 @@ export function App(): JSX.Element {
                     disabled={['checking', 'downloading', 'ready'].includes(state.update.phase)}
                     onClick={() => void window.zhujie.checkUpdates()}
                   >
-                    {state.update.phase === 'checking' ? '检查中…' : '检查更新'}
+                    {state.update.phase === 'checking' ? t('检查中…') : t('检查更新')}
                   </button>
                   {state.update.phase === 'available' && (
                     <button className="primary" onClick={() => void downloadUpdate()}>
-                      下载更新
+                      {t('下载更新')}
                     </button>
                   )}
                   {state.update.phase === 'error' && state.update.latestVersion && (
                     <button className="primary" onClick={() => void downloadUpdate()}>
-                      重试下载
+                      {t('重试下载')}
                     </button>
                   )}
                   {state.update.phase === 'ready' && (
@@ -2240,18 +2384,18 @@ export function App(): JSX.Element {
                       className="primary"
                       onClick={async () => {
                         const result = await window.zhujie.installUpdate()
-                        if (!result.ok) flash(result.error ?? '更新失败')
+                        if (!result.ok) flash(result.error ?? t('更新失败'))
                       }}
                     >
-                      重启并更新
+                      {t('重启并更新')}
                     </button>
                   )}
                   <button className="link" onClick={() => void window.zhujie.openReleasePage()}>
-                    打开发布页
+                    {t('打开发布页')}
                   </button>
                 </div>
                 <label className="switch-row update-auto">
-                  <span>启动时检查更新</span>
+                  <span>{t('启动时检查更新')}</span>
                   <input
                     type="checkbox"
                     className="switch"
@@ -2262,7 +2406,7 @@ export function App(): JSX.Element {
                   />
                 </label>
                 <label className="switch-row update-auto">
-                  <span>发现新版本后自动下载</span>
+                  <span>{t('发现新版本后自动下载')}</span>
                   <input
                     type="checkbox"
                     className="switch"
@@ -2271,16 +2415,16 @@ export function App(): JSX.Element {
                   />
                 </label>
                 <p className="hint">
-                  关闭时只弹出提示，点「下载更新」后才下载；无论开关如何，都需要你点「重启并更新」才会替换程序。
+                  {t('关闭时只弹出提示，点「下载更新」后才下载；无论开关如何，都需要你点「重启并更新」才会替换程序。')}
                 </p>
                 <p className="hint">
-                  安装包未做代码签名；SHA-256 主要防传输损坏，不能完全防止发布账号被入侵。只从本仓库 Releases 更新，介意供应链风险可关闭自动下载。
+                  {t('安装包未做代码签名；SHA-256 主要防传输损坏，不能完全防止发布账号被入侵。只从本仓库 Releases 更新，介意供应链风险可关闭自动下载。')}
                 </p>
               </div>
 
               <div className="panel-card">
                 <div className="card-head">
-                  <h2>启动</h2>
+                  <h2>{t('启动')}</h2>
                   <input
                     type="checkbox"
                     className="switch"
@@ -2288,24 +2432,22 @@ export function App(): JSX.Element {
                     onChange={(event) => void patch({ launchAtLogin: event.target.checked })}
                   />
                 </div>
-                <p className="muted">开机后自动在托盘运行，不弹窗；需要时点托盘图标打开设置。</p>
+                <p className="muted">{t('开机后自动在托盘运行，不弹窗；需要时点托盘图标打开设置。')}</p>
               </div>
 
               <div className="panel-card">
                 <div className="card-head">
-                  <h2>隐私</h2>
+                  <h2>{t('隐私')}</h2>
                 </div>
                 <p className="prose">
-                  配置、用量记录、历史对话和综合摘要都只保存在本机数据目录。历史和摘要是明文文件，
-                  未做额外加密。默认开启「仅本机」，请求只会发往 localhost。关闭后才会使用你自行配置的
-                  云端接口；本应用没有内置遥测、账号或云同步。
+                  {t('配置、用量记录、历史对话和综合摘要都只保存在本机数据目录。历史和摘要是明文文件，未做额外加密。默认开启「仅本机」，请求只会发往 localhost。关闭后才会使用你自行配置的云端接口；本应用没有内置遥测、账号或云同步。')}
                 </p>
               </div>
 
               <div className="panel-card">
                 <div className="card-head">
-                  <h2>参考项目与许可</h2>
-                  <span className="muted">MIT · 制作人 piona</span>
+                  <h2>{t('参考项目与许可')}</h2>
+                  <span className="muted">{t('MIT · 制作 piona')}</span>
                 </div>
                 <ul className="ref-list">
                   <li>
@@ -2313,35 +2455,35 @@ export function App(): JSX.Element {
                       selection-hook
                     </a>
                     <span className="license">MIT</span>
-                    <span>全局划词取词与鼠标/键盘钩子，返回文本、坐标与应用名。</span>
+                    <span>{t('全局划词取词与鼠标/键盘钩子，返回文本、坐标与应用名。')}</span>
                   </li>
                   <li>
                     <a href="https://github.com/zcx960/AIA-selection-assistan" target="_blank" rel="noreferrer">
                       AIA-selection-assistan
                     </a>
                     <span className="license">MIT</span>
-                    <span>Electron 划词助手的交互与窗口定位思路参考。</span>
+                    <span>{t('Electron 划词助手的交互与窗口定位思路参考。')}</span>
                   </li>
                   <li>
                     <a href="https://github.com/CherryHQ/cherry-studio" target="_blank" rel="noreferrer">
                       Cherry Studio
                     </a>
                     <span className="license warn">AGPL-3.0</span>
-                    <span>划词助手产品形态调研；未复用其代码。</span>
+                    <span>{t('划词助手产品形态调研；未复用其代码。')}</span>
                   </li>
                   <li>
                     <a href="https://github.com/pot-app/pot-desktop" target="_blank" rel="noreferrer">
                       pot-desktop
                     </a>
                     <span className="license warn">GPL-3.0</span>
-                    <span>划词翻译交互调研；仓库已归档，未复用其代码。</span>
+                    <span>{t('划词翻译交互调研；仓库已归档，未复用其代码。')}</span>
                   </li>
                   <li>
                     <a href="https://github.com/nextai-translator/nextai-translator" target="_blank" rel="noreferrer">
                       nextai-translator
                     </a>
                     <span className="license warn">AGPL-3.0</span>
-                    <span>桌面划词产品调研；未复用其代码。</span>
+                    <span>{t('桌面划词产品调研；未复用其代码。')}</span>
                   </li>
                 </ul>
               </div>
@@ -2390,7 +2532,7 @@ function FavoriteCard({
       <div className="favorite-head">
         <div className="favorite-meta">
           <span className={favorite.mode === 'ask' ? 'history-mode ask' : 'history-mode'}>
-            {favorite.mode === 'ask' ? '提问' : '注解'}
+            {favorite.mode === 'ask' ? t('提问') : t('注解')}
           </span>
           <span className="muted">
             {fmtTime(favorite.ts)} · {favorite.programName} · {favorite.model}
@@ -2398,21 +2540,23 @@ function FavoriteCard({
         </div>
         <div className="favorite-actions">
           <button className="link" onClick={() => void copy()}>
-            {copied ? '已复制' : '复制回答'}
+            {copied ? t('已复制') : t('复制回答')}
           </button>
           <button className="link danger" onClick={onDelete}>
-            删除
+            {t('删除')}
           </button>
         </div>
       </div>
       <div className="favorite-question">
-        <span>{favorite.question ? '你的问题' : '选中的文字'}</span>
+        <span>{favorite.question ? t('你的问题') : t('选中的文字')}</span>
         <p>{favorite.question || favorite.text}</p>
       </div>
       <div className="favorite-answer markdown" dangerouslySetInnerHTML={{ __html: html }} />
       <div className="favorite-foot">
         {favorite.totalTokens.toLocaleString()} tokens · {formatCny(favorite.cost)}
-        {favorite.contextChars ? ` · 结合上下文 ${favorite.contextChars} 字` : ''}
+        {favorite.contextChars
+          ? ` · ${t('结合上下文 {count} 字', { count: favorite.contextChars })}`
+          : ''}
       </div>
     </article>
   )
@@ -2434,8 +2578,8 @@ function SummaryCard({ summary }: { summary: HistorySummary }): JSX.Element {
   return (
     <details className="summary-card" open>
       <summary>
-        <span className="history-mode summary">综合</span>
-        <span className="summary-title">{summary.sourceCount} 条记录</span>
+        <span className="history-mode summary">{t('综合')}</span>
+        <span className="summary-title">{t('{count} 条记录', { count: summary.sourceCount })}</span>
         <span className="summary-meta">
           {fmtTime(summary.fromTs)} – {fmtTime(summary.toTs)} · {summary.model}
         </span>
@@ -2447,7 +2591,7 @@ function SummaryCard({ summary }: { summary: HistorySummary }): JSX.Element {
           {formatCny(summary.cost)}
         </span>
         <button className="link" onClick={() => void copy()}>
-          {copied ? '已复制' : '复制摘要'}
+          {copied ? t('已复制') : t('复制摘要')}
         </button>
       </div>
     </details>
@@ -2473,22 +2617,24 @@ function ProviderCard({
         <div>
           <h3>
             {provider.name}
-            {isDefault && <span className="pill accent">默认</span>}
-            <span className={local ? 'pill' : 'pill warn'}>{local ? '本机' : '外部'}</span>
-            {hasFree && <span className="free-badge">免费</span>}
+            {isDefault && <span className="pill accent">{t('默认')}</span>}
+            <span className={local ? 'pill' : 'pill warn'}>
+              {local ? t('本机') : t('外部')}
+            </span>
+            {hasFree && <span className="free-badge">{t('免费')}</span>}
           </h3>
           <code className="provider-url">{provider.baseUrl}</code>
         </div>
         <div className="provider-actions">
           <button className="ghost" onClick={onTest} disabled={test?.loading}>
-            {test?.loading ? '测试中…' : '测试 / 拉取模型'}
+            {test?.loading ? t('测试中…') : t('测试 / 拉取模型')}
           </button>
           <button className="ghost" onClick={onEdit}>
-            编辑
+            {t('编辑')}
           </button>
           {!provider.builtin && (
             <button className="ghost danger" onClick={onRemove}>
-              删除
+              {t('删除')}
             </button>
           )}
         </div>
@@ -2496,14 +2642,14 @@ function ProviderCard({
 
       <div className="model-chips">
         {provider.models.length === 0 ? (
-          <span className="muted">尚未获取模型列表</span>
+          <span className="muted">{t('尚未获取模型列表')}</span>
         ) : (
           provider.models.map((model) => (
             <button
               key={model}
               className={model === currentModel ? 'chip-model active' : 'chip-model'}
               onClick={() => onUseModel(model)}
-              title="设为默认模型"
+              title={t('设为默认模型')}
             >
               {modelDisplayName(provider.presetId ?? provider.id, model)}
               <MultiplierBadge
@@ -2521,8 +2667,10 @@ function ProviderCard({
       </div>
 
       {test?.error && <p className="test-error">{test.error}</p>}
-      {test?.ok && <p className="test-ok">连接正常，发现 {test.models} 个模型。</p>}
-      {provider.hasKey && <span className="key-flag">已保存 API Key</span>}
+      {test?.ok && (
+        <p className="test-ok">{t('连接正常，发现 {count} 个模型。', { count: test.models ?? 0 })}</p>
+      )}
+      {provider.hasKey && <span className="key-flag">{t('已保存 API Key')}</span>}
     </div>
   )
 }

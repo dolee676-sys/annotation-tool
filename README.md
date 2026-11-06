@@ -1,16 +1,50 @@
 # 注解 · 划词 AI 助手
 
+[English](README.en.md) | 简体中文
+
 [![CI](https://github.com/dolee676-sys/annotation-tool/actions/workflows/ci.yml/badge.svg)](https://github.com/dolee676-sys/annotation-tool/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows&logoColor=white)](#下载安装windows-1011)
 
-> 制作人：piona · MIT License · [GitHub 仓库](https://github.com/dolee676-sys/annotation-tool)
+**在任意应用里选中文字，AI 结合上下文解释；选中问题先给答案，再解释。**
 
-在任意应用里选中一段文字，旁边会出现「注解 / 提问」小框；点开就是 AI 解析或问答。支持本机模型和云端模型，并记录每次调用的 token、费用和历史。
+OneNote、Word、PDF、浏览器、编辑器都能用。支持本机模型和云端模型，费用透明。
 
-[下载最新版](https://github.com/dolee676-sys/annotation-tool/releases/latest) · [第一次配置](#第一次使用配置-ai) · [常见问题](#常见问题)
+[**下载 Windows 版**](https://github.com/dolee676-sys/annotation-tool/releases/latest) · [15 秒演示](#演示) · [为什么不是又一个划词翻译](#为什么不是又一个划词翻译) · [第一次配置](#第一次使用配置-ai)
 
-![注解面板](selftest/panel.png)
+> 制作：piona · MIT License · [GitHub 仓库](https://github.com/dolee676-sys/annotation-tool)
 
-## 下载安装（推荐）
+## 演示
+
+![选中文字 → 注解 → 追问](docs/demo.zh.gif)
+
+真实界面演示：选中文字 → 注 → 结合上下文回答 → 追问。截图里的模型是自测占位模型。
+
+## 为什么不是又一个划词翻译
+
+大多数划词工具只把“选中的几个字”发给 AI。注解会读取来源应用里的上下文，按「词 / 问题 / 段落」分别回答，并把每次费用和历史留下来。
+
+- **真的读上下文**：在 OneNote、Word、PDF 里选中词，读取它所在段落；不是只看选中的几个字。
+- **注 / 问分开**：注解按「词义 → 当前语境 → 作用」；问题先给答案再解释；都支持多轮追问。
+- **本机 / 云端都行**：Ollama、LM Studio 免费不联网；云端用你自己的 Key，倍率、费用、历史可见。
+
+### 和常见工具对比
+
+| | 注解 | [即懂](https://microsoftedge.microsoft.com/addons/detail/%E5%8D%B3%E6%87%82-%E5%88%92%E8%AF%8D%E8%A7%A3%E9%87%8A%EF%BC%8C%E7%BB%93%E5%90%88%E4%BD%A0%E7%9A%84%E4%B8%8A%E4%B8%8B%E6%96%87/kodjeigndbhlecbbgdmfemcdopggikfm?hl=zh-CN) | [Pot](https://github.com/pot-app/pot-desktop) | [nextai-translator](https://github.com/nextai-translator/nextai-translator) |
+|---|---|---|---|---|
+| 跨应用（OneNote/Word/PDF） | 支持 | —（网页内） | 支持 | 支持（桌面+浏览器） |
+| 读取来源应用上下文 | 支持 | 仅网页语境 | — | — |
+| 注 / 问双模式 | 支持 | 解释 + 追问 | 翻译/OCR 为主 | 翻译/解释为主 |
+| 本机模型 | 支持 | — | 插件/自定义 | 兼容接口 |
+| 费用 / 历史 / 收藏 | 支持 | 历史 | — | — |
+| 平台 | Windows | 浏览器 | Win/mac/Linux | Win/mac + 浏览器 |
+| 开源 | MIT | 闭源 | GPL-3.0（已归档） | AGPL-3.0 |
+
+> 定位不同：只需要网页翻译，即懂/Pot 更轻；在 OneNote/Word 里读长文、需要上下文和追问，注解更合适。表中只列公开确认的能力，未列不代表没有；对比基于公开信息，欢迎指正。
+>
+> 如果这个项目对你有帮助，欢迎点一个 Star；遇到问题请开 [Issue](https://github.com/dolee676-sys/annotation-tool/issues)。
+
+## 下载安装（Windows 10/11）
 
 > 适用于 Windows 10/11 64 位。绿色免安装版，解压即用。
 >
@@ -157,6 +191,7 @@ DeepSeek、通义千问、Kimi、OpenAI 都在列表里。选服务商、粘贴 
 
 ## 进阶设置
 
+- **语言**：模型服务页顶部可以切换界面语言（跟随系统 / 中文 / English）和回答语言；英文界面覆盖设置、注解面板、历史、收藏、用量、关于和服务商教程。
 - **模型服务**：切换本机/云端、更换模型、查看免费标识与消耗倍率。
 - **注解提示词**：修改注解风格、开关上下文、调整上下文长度和单次发送上限。
 - **应用范围**：全部应用 / 仅指定应用，支持搜索进程名。
@@ -271,7 +306,7 @@ tests/compress.test.ts   压缩提交失败时旧记录保留
 <summary>开发验证记录（2026-11-05，点开）</summary>
 
 - `npm run typecheck`：通过
-- `npm test`：37 项通过（价目、消耗倍率、百炼模型排序与分组、百炼版标识、面板/设置页模型同步、非对话模型过滤、免费标识、选区标记、多轮追问、提问先作答、选中问题先回答再解释、词/问题/段落分流、导航信任、版本比较与发布页版本解析、更新包校验/结果解析、更新脚本成功替换、失败回滚、历史压缩提交/失败回滚/清空回滚、设置写盘失败与密钥加密、压缩提交失败保留旧记录、旧用量 latencyMs 守卫、OpenAI SSE、Ollama NDJSON、401、坏行、中止、模型列表、取词服务生命周期）
+- `npm test`：39 项通过（价目、消耗倍率、百炼模型排序与分组、百炼版标识、面板/设置页模型同步、非对话模型过滤、语言解析与英文提示词、设置语言迁移、免费标识、选区标记、多轮追问、提问先作答、选中问题先回答再解释、词/问题/段落分流、导航信任、版本比较与发布页版本解析、更新包校验/结果解析、更新脚本成功替换、失败回滚、历史压缩提交/失败回滚/清空回滚、设置写盘失败与密钥加密、压缩提交失败保留旧记录、旧用量 latencyMs 守卫、OpenAI SSE、Ollama NDJSON、401、坏行、中止、模型列表、取词服务生命周期）
 - `npm run build`：通过（主进程 / 3 个 preload / 渲染进程）
 - Release 工作流现在会先跑 `npm test`，再构建和发布，测试失败不会出包
 - `npm run selftest`：通过

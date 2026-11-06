@@ -55,6 +55,7 @@ export interface ZhujieApi {
   restartHook(): Promise<AppState>
   writeClipboard(text: string): Promise<boolean>
   chipClick(action: 'annotate' | 'ask'): Promise<boolean>
+  getLocale(): Promise<'zh-CN' | 'en-US'>
   onAppear(callback: () => void): () => void
   panelReady(): Promise<boolean>
   panelClose(): Promise<boolean>

@@ -12,6 +12,7 @@ import { basename, dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import type { UpdateStatus } from '../shared/types'
 import { isNewerVersion, parseReleaseVersion } from '../shared/version'
+import { translate, type Locale } from '../shared/i18n'
 import { APPLY_SCRIPT } from './applyUpdateScript'
 import { parseApplyResult, parseChecksum, verifyDownloadedFile } from './updateSafety'
 
@@ -42,14 +43,17 @@ async function httpFetch(url: string, init: RequestInit): Promise<Response> {
   }
 }
 
-function friendlyCheckError(error: unknown): string {
+function friendlyCheckError(error: unknown, locale: Locale): string {
   const raw = messageOf(error)
   if (
     /fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|network|socket|terminated|aborted/i.test(
       raw
     )
   ) {
-    return '检查更新失败：连不上 GitHub。请检查网络或代理，然后点「检查更新」重试。'
+    return translate(
+      locale,
+      '检查更新失败：连不上 GitHub。请检查网络或代理，然后点「检查更新」重试。'
+    )
   }
   return raw
 }
@@ -61,6 +65,7 @@ export interface UpdateManagerOptions {
   onBeforeInstall: () => void
   shouldAutoDownload: () => boolean
   onAvailable: (latest: string, releaseUrl: string) => void
+  getLocale: () => Locale
 }
 
 export class UpdateManager {
@@ -70,6 +75,7 @@ export class UpdateManager {
   private readonly onBeforeInstall: () => void
   private readonly shouldAutoDownload: () => boolean
   private readonly onAvailable: (latest: string, releaseUrl: string) => void
+  private readonly getLocale: () => Locale
   private status: UpdateStatus
   private busy = false
   private downloading = false
@@ -81,7 +87,12 @@ export class UpdateManager {
     this.onBeforeInstall = options.onBeforeInstall
     this.shouldAutoDownload = options.shouldAutoDownload
     this.onAvailable = options.onAvailable
+    this.getLocale = options.getLocale
     this.status = { phase: 'idle', currentVersion: this.currentVersion }
+  }
+
+  private t(key: string, params?: Record<string, string | number>): string {
+    return translate(this.getLocale(), key, params)
   }
 
   getStatus(): UpdateStatus {
@@ -108,8 +119,11 @@ export class UpdateManager {
           currentVersion: this.currentVersion,
           latestVersion: latest,
           message: localAhead
-            ? `线上最新 v${latest}；当前本地 v${this.currentVersion}（本地构建较新）`
-            : `已是最新版本 v${latest}`
+            ? this.t('线上最新 v{latest}；当前本地 v{current}（本地构建较新）', {
+                latest,
+                current: this.currentVersion
+              })
+            : this.t('已是最新版本 v{version}', { version: latest })
         })
         return this.status
       }
@@ -120,7 +134,7 @@ export class UpdateManager {
         currentVersion: this.currentVersion,
         latestVersion: latest,
         releaseUrl,
-        message: `发现新版本 v${latest}`
+        message: this.t('发现新版本 v{version}', { version: latest })
       })
       if (this.shouldAutoDownload()) {
         await this.downloadRelease(latest, releaseUrl)
@@ -138,7 +152,7 @@ export class UpdateManager {
         phase: 'error',
         currentVersion: this.currentVersion,
         latestVersion: this.status.latestVersion,
-        message: friendlyCheckError(error)
+        message: friendlyCheckError(error, this.getLocale())
       })
       return this.status
     } finally {
@@ -172,16 +186,16 @@ export class UpdateManager {
 
   async install(): Promise<{ ok: boolean; error?: string }> {
     if (this.status.phase !== 'ready') {
-      return { ok: false, error: '更新包还没有准备好' }
+      return { ok: false, error: this.t('更新包还没有准备好') }
     }
     if (!app.isPackaged) {
-      return { ok: false, error: '开发模式不支持自动更新，请使用打包版' }
+      return { ok: false, error: this.t('开发模式不支持自动更新，请使用打包版') }
     }
     const source = join(this.updateDir(), 'extract', 'win-unpacked')
     const exeName = basename(process.execPath)
     const target = dirname(process.execPath)
     if (!existsSync(join(source, exeName))) {
-      return { ok: false, error: '更新包文件不完整，请重新下载' }
+      return { ok: false, error: this.t('更新包文件不完整，请重新下载') }
     }
     const probe = join(target, `.zhujie-write-test-${process.pid}`)
     try {
@@ -190,7 +204,9 @@ export class UpdateManager {
     } catch {
       return {
         ok: false,
-        error: `安装目录不可写（${target}）。请用管理员身份运行，或到发布页手动下载。`
+        error: this.t('安装目录不可写（{target}）。请用管理员身份运行，或到发布页手动下载。', {
+          target
+        })
       }
     }
 
@@ -239,7 +255,10 @@ export class UpdateManager {
       this.onBeforeInstall()
       return { ok: true }
     } catch (error) {
-      return { ok: false, error: `无法启动更新程序：${messageOf(error)}` }
+      return {
+        ok: false,
+        error: this.t('无法启动更新程序：{error}', { error: messageOf(error) })
+      }
     }
   }
 
@@ -248,7 +267,9 @@ export class UpdateManager {
     this.setStatus({
       phase: 'error',
       currentVersion: this.currentVersion,
-      message: `上次更新安装失败，已回滚到当前版本：${result.message ?? '未知错误'}`
+      message: this.t('上次更新安装失败，已回滚到当前版本：{error}', {
+        error: result.message ?? this.t('未知错误')
+      })
     })
   }
 
@@ -286,12 +307,16 @@ export class UpdateManager {
       headers: { 'User-Agent': USER_AGENT },
       signal: AbortSignal.timeout(15000)
     })
-    if (!res.ok) throw new Error(`检查更新失败：GitHub 返回 ${res.status}`)
+    if (!res.ok) {
+      throw new Error(this.t('检查更新失败：GitHub 返回 {status}', { status: res.status }))
+    }
     const fromUrl = parseReleaseVersion(res.url)
     if (fromUrl) return fromUrl
     const version = parseReleaseVersion(res.url, await res.text())
     if (!version) {
-      throw new Error('检查更新失败：无法识别最新版本号，请稍后重试或打开下载页。')
+      throw new Error(
+        this.t('检查更新失败：无法识别最新版本号，请稍后重试或打开下载页。')
+      )
     }
     return version
   }
@@ -311,11 +336,13 @@ export class UpdateManager {
       signal: AbortSignal.timeout(15000)
     })
     if (!res.ok) {
-      throw new Error('新版本没有提供 SHA-256 校验文件，已停止自动安装。请到发布页手动下载。')
+      throw new Error(
+        this.t('新版本没有提供 SHA-256 校验文件，已停止自动安装。请到发布页手动下载。')
+      )
     }
     const text = await res.text()
     const checksum = parseChecksum(text)
-    if (!checksum) throw new Error('更新包校验文件格式不正确，已停止安装。')
+    if (!checksum) throw new Error(this.t('更新包校验文件格式不正确，已停止安装。'))
     return checksum
   }
 
@@ -332,9 +359,9 @@ export class UpdateManager {
       latestVersion: latest,
       progress: 0,
       releaseUrl: releaseUrl ?? `https://github.com/${REPO}/releases/tag/v${latest}`,
-      message: '正在下载更新'
+      message: this.t('正在下载更新')
     })
-    this.onProgress(0, '正在校验发布信息')
+    this.onProgress(0, this.t('正在校验发布信息'))
 
     const checksum = await this.fetchChecksum(latest)
     const res = await httpFetch(this.assetUrl(latest, ASSET_NAME), {
@@ -342,10 +369,12 @@ export class UpdateManager {
       headers: { 'User-Agent': USER_AGENT },
       signal: AbortSignal.timeout(10 * 60 * 1000)
     })
-    if (!res.ok || !res.body) throw new Error(`下载更新失败：GitHub 返回 ${res.status}`)
+    if (!res.ok || !res.body) {
+      throw new Error(this.t('下载更新失败：GitHub 返回 {status}', { status: res.status }))
+    }
 
     const total = Number(res.headers.get('content-length') ?? 0)
-    if (total > MAX_DOWNLOAD_BYTES) throw new Error('更新包体积异常，已停止下载。')
+    if (total > MAX_DOWNLOAD_BYTES) throw new Error(this.t('更新包体积异常，已停止下载。'))
     const writer = createWriteStream(zipPath)
     const reader = res.body.getReader()
     let received = 0
@@ -355,7 +384,9 @@ export class UpdateManager {
       if (done) break
       const chunk = Buffer.from(value)
       received += chunk.length
-      if (received > MAX_DOWNLOAD_BYTES) throw new Error('更新包体积异常，已停止下载。')
+      if (received > MAX_DOWNLOAD_BYTES) {
+        throw new Error(this.t('更新包体积异常，已停止下载。'))
+      }
       await new Promise<void>((resolve, reject) => {
         writer.write(chunk, (error) => (error ? reject(error) : resolve()))
       })
@@ -363,7 +394,7 @@ export class UpdateManager {
         const percent = Math.min(99, Math.floor((received / total) * 100))
         if (percent !== lastPercent) {
           lastPercent = percent
-          this.onProgress(percent, `正在下载更新 ${percent}%`)
+          this.onProgress(percent, this.t('正在下载更新 {percent}%', { percent }))
         }
       }
     }
@@ -371,12 +402,12 @@ export class UpdateManager {
       writer.end((error?: Error | null) => (error ? reject(error) : resolve()))
     })
 
-    this.onProgress(100, '正在校验更新包')
+    this.onProgress(100, this.t('正在校验更新包'))
     if (!(await verifyDownloadedFile(zipPath, checksum))) {
-      throw new Error('更新包 SHA-256 校验失败，已删除下载内容。')
+      throw new Error(this.t('更新包 SHA-256 校验失败，已删除下载内容。'))
     }
 
-    this.onProgress(100, '正在解压更新包')
+    this.onProgress(100, this.t('正在解压更新包'))
     mkdirSync(extractDir, { recursive: true })
     const command = `Expand-Archive -LiteralPath '${psQuote(zipPath)}' -DestinationPath '${psQuote(extractDir)}' -Force`
     await run(
@@ -387,14 +418,14 @@ export class UpdateManager {
     rmSync(zipPath, { force: true })
 
     const source = join(extractDir, 'win-unpacked')
-    if (!existsSync(source)) throw new Error('更新包结构不完整')
+    if (!existsSync(source)) throw new Error(this.t('更新包结构不完整'))
     this.setStatus({
       phase: 'ready',
       currentVersion: this.currentVersion,
       latestVersion: latest,
       progress: 100,
       releaseUrl: releaseUrl ?? `https://github.com/${REPO}/releases/tag/v${latest}`,
-      message: '更新已下载并校验，重启后完成安装'
+      message: this.t('更新已下载并校验，重启后完成安装')
     })
   }
 }
