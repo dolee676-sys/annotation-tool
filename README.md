@@ -222,6 +222,8 @@ src/main/history.ts      JSONL 历史对话与综合摘要
 src/main/favorites.ts    收藏存储
 src/main/compress.ts     历史分批归纳与最终综合摘要
 src/main/updates.ts      更新检查、SHA-256 校验、安装失败回滚
+src/main/updateSafety.ts 更新校验、安装结果解析与校验失败清理
+src/main/applyUpdateScript.ts 更新时替换文件/备份/回滚的 PowerShell 脚本
 src/main/security.ts     本地页面信任判断（导航 / IPC 共用）
 src/shared/presets.ts    服务商预设、免费模型标识、配置/充值教程
 src/shared/pricing.ts    内置人民币价目与费用估算
@@ -234,6 +236,7 @@ src/shared/types.ts      主进程 / 渲染进程共享契约
 tests/core.test.ts       纯函数、提示词、提问/注解模式、导航安全单元测试
 tests/ai.test.ts         OpenAI / Ollama 解析、401、坏行、中止测试
 tests/selection.test.ts  取词服务启动失败、错误保留与重试测试
+tests/updates.e2e.test.ts 更新包校验失败删除、替换成功、替换失败回滚
 ```
 
 ### 安全边界
@@ -263,13 +266,14 @@ tests/selection.test.ts  取词服务启动失败、错误保留与重试测试
 <summary>开发验证记录（2026-11-05，点开）</summary>
 
 - `npm run typecheck`：通过
-- `npm test`：21 项通过（价目、消耗倍率、免费标识、选区标记、多轮追问、提问先作答、选中问题先回答再解释、三段式注解、导航信任、版本比较、更新包校验/结果解析、旧用量 latencyMs 守卫、OpenAI SSE、Ollama NDJSON、401、坏行、中止、模型列表、取词服务生命周期）
+- `npm test`：24 项通过（价目、消耗倍率、免费标识、选区标记、多轮追问、提问先作答、选中问题先回答再解释、三段式注解、导航信任、版本比较、更新包校验/结果解析、更新脚本成功替换、失败回滚、旧用量 latencyMs 守卫、OpenAI SSE、Ollama NDJSON、401、坏行、中止、模型列表、取词服务生命周期）
 - `npm run build`：通过（主进程 / 3 个 preload / 渲染进程）
 - `npm run selftest`：通过
   - 模拟划词 → 小框 → 面板 → 流式输出 → 入库
   - 注解 2 次、提问 2 次，加历史压缩等共 7 次请求 / 4260 tokens；`turns=2`，验证追问带上了上一轮回答
   - 历史记录按会话合并：自测生成 2 个对话，每个显示「2 轮问答」，详情能展开全部问答
   - 历史收藏：逐条收藏后收藏数 +1，再次点击取消收藏后恢复
+  - 更新器 E2E：临时目录模拟替换成功；故意让复制失败，确认旧文件回滚；校验和不匹配时删除下载文件
   - 历史压缩：模拟 1000 条 → 压缩最早 800 条 → 保留 200 条、生成 1 份摘要
   - 历史上限：文件 1004 行，压缩后重写为 200 行
   - 安全边界：面板 preload 只暴露面板能力；设置窗口不暴露面板/小框能力；面板导航到本地非应用页面后 URL 仍停留在 `#panel`

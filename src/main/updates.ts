@@ -1,8 +1,6 @@
 import { app } from 'electron'
 import { execFile, spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
 import {
-  createReadStream,
   createWriteStream,
   existsSync,
   mkdirSync,
@@ -14,7 +12,8 @@ import { basename, dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import type { UpdateStatus } from '../shared/types'
 import { isNewerVersion } from '../shared/version'
-import { checksumMatches, parseApplyResult, parseChecksum } from './updateSafety'
+import { APPLY_SCRIPT } from './applyUpdateScript'
+import { parseApplyResult, parseChecksum, verifyDownloadedFile } from './updateSafety'
 
 const run = promisify(execFile)
 const REPO = 'dolee676-sys/annotation-tool'
@@ -24,51 +23,6 @@ const CHECKSUM_NAME = `${ASSET_NAME}.sha256`
 const USER_AGENT = 'zhujie-updater'
 const MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
 
-const APPLY_SCRIPT = `param(
-  [int]$ProcessId,
-  [string]$Source,
-  [string]$Target,
-  [string]$ExeName,
-  [string]$Backup,
-  [string]$LogPath
-)
-Wait-Process -Id $ProcessId -ErrorAction SilentlyContinue
-Start-Sleep -Milliseconds 900
-$success = $false
-try {
-  if (Test-Path -LiteralPath $Backup) {
-    Remove-Item -LiteralPath $Backup -Recurse -Force -ErrorAction SilentlyContinue
-  }
-  New-Item -ItemType Directory -Path $Backup -Force | Out-Null
-  Copy-Item -Path (Join-Path $Target '*') -Destination $Backup -Recurse -Force -ErrorAction Stop
-  Copy-Item -Path (Join-Path $Source '*') -Destination $Target -Recurse -Force -ErrorAction Stop
-  if (-not (Test-Path -LiteralPath (Join-Path $Target $ExeName))) {
-    throw '安装后找不到主程序'
-  }
-  $success = $true
-  Set-Content -LiteralPath $LogPath -Value 'ok' -Encoding UTF8
-} catch {
-  $message = $_.Exception.Message
-  Set-Content -LiteralPath $LogPath -Value ('fail: ' + $message) -Encoding UTF8
-  try {
-    if (Test-Path -LiteralPath $Backup) {
-      Copy-Item -Path (Join-Path $Backup '*') -Destination $Target -Recurse -Force -ErrorAction Stop
-    }
-  } catch {
-    Add-Content -LiteralPath $LogPath -Value ('rollback-failed: ' + $_.Exception.Message) -Encoding UTF8
-  }
-}
-try {
-  Start-Process -FilePath (Join-Path $Target $ExeName)
-} catch {
-  Add-Content -LiteralPath $LogPath -Value ('restart-failed: ' + $_.Exception.Message) -Encoding UTF8
-}
-if ($success) {
-  Start-Sleep -Milliseconds 800
-  Remove-Item -LiteralPath $Backup -Recurse -Force -ErrorAction SilentlyContinue
-  Remove-Item -LiteralPath $Source -Recurse -Force -ErrorAction SilentlyContinue
-}
-`
 
 function psQuote(value: string): string {
   return value.replace(/'/g, "''")
@@ -374,8 +328,7 @@ export class UpdateManager {
     })
 
     this.onProgress(100, '正在校验更新包')
-    const actual = await sha256File(zipPath)
-    if (!checksumMatches(checksum, actual)) {
+    if (!(await verifyDownloadedFile(zipPath, checksum))) {
       throw new Error('更新包 SHA-256 校验失败，已删除下载内容。')
     }
 
@@ -400,14 +353,4 @@ export class UpdateManager {
       message: '更新已下载并校验，重启后完成安装'
     })
   }
-}
-
-function sha256File(file: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const hash = createHash('sha256')
-    const stream = createReadStream(file)
-    stream.on('data', (chunk) => hash.update(chunk))
-    stream.on('end', () => resolve(hash.digest('hex')))
-    stream.on('error', reject)
-  })
 }
