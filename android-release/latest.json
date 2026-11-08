@@ -1,8 +1,8 @@
 {
-  "versionCode": 16,
-  "versionName": "0.1.15",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.15.apk",
-  "sha256": "f48d1ffffca5183de57566a62d45d98cfec90dc65b905395e1fb6f4fd496fd7a",
-  "size": 219019,
-  "notes": "抓取改为贴边小浮窗，不再居中大框；抓取页点词即可注解；增强划词识别与旋转后气泡复位。"
+  "versionCode": 17,
+  "versionName": "0.1.16",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.16.apk",
+  "sha256": "55bec1ebb1834089b6f8f747242b810eccd00bf90d6e4c9f08e7dd55f7b2c780",
+  "size": 223115,
+  "notes": "新增 OneNote 复制取词：复制后自动出现注/问，长按抓可选读剪贴板；保留贴边小浮窗与点词注解。"
 }
