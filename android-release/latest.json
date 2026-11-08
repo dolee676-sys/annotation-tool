@@ -1,8 +1,8 @@
 {
-  "versionCode": 9,
-  "versionName": "0.1.8",
-  "url": "zhujie-tablet.apk",
-  "sha256": "33a63d415a8df9a4fe8409184984dce501188950a8a691e89cccdf41e7084647",
+  "versionCode": 10,
+  "versionName": "0.1.9",
+  "url": "zhujie-tablet-0.1.9.apk",
+  "sha256": "f9f27fb5163cfc7a950b7d0edd2a10713fd02a972394d3d2e726a83e1f2573de",
   "size": 206532,
-  "notes": "OneNote 等不能划词时，点「抓」把页面文字抓进阅读器；提示词与模型对齐；小框可拖动；修复按钮残留。"
+  "notes": "更新包按版本命名并绕过缓存，修复检测到新版却下载旧包；包含 OneNote 抓取、提示词与模型对齐。"
 }
