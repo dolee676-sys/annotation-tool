@@ -1,8 +1,8 @@
 {
-  "versionCode": 18,
-  "versionName": "0.1.17",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.17.apk",
-  "sha256": "ff9acccdc53a81b1ba2a7614531ae2142f92a426b7ed0fa969490013a1416e76",
+  "versionCode": 19,
+  "versionName": "0.1.18",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.18.apk",
+  "sha256": "e8c3be2cacc00ec23a222bbd2168deddd61f6cf7dca750e31d03ca851f9ca366",
   "size": 231307,
-  "notes": "新增划词层：点「划」后在原文上拖选文字，松手只识别选区并出现注/问；长按可选整页抓取、读剪贴板、关闭。"
+  "notes": "修复更新检测：固定官方更新源，同时查 API 和 raw 两个源取最高版本，并直接显示当前/最新版本号；划词层保留。"
 }
