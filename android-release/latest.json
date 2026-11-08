@@ -1,8 +1,8 @@
 {
-  "versionCode": 14,
-  "versionName": "0.1.13",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.13.apk",
-  "sha256": "51ff23fe33549bd6660fa3e59593b9773d8500fac0af182454c92c8f30181176",
+  "versionCode": 15,
+  "versionName": "0.1.14",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.14.apk",
+  "sha256": "7c86bea0829cc329b49264f0b2eadfd69f04c6ab827e98ebc4757d9789bbe2d3",
   "size": 219019,
-  "notes": "抓取改为截屏 OCR，OneNote 可直接识屏；长按抓显示关闭抓按钮；状态与模型修复。"
+  "notes": "更新下载校验安装包版本号，拒绝低版本；包含截屏识图与长按关闭抓。"
 }
