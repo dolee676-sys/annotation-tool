@@ -1,8 +1,8 @@
 {
-  "versionCode": 20,
-  "versionName": "0.1.19",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.19.apk",
-  "sha256": "a5a42e7c1089b6bf7caa242875ffc0e5e3f3abbe66d15f768409d071d93e8f69",
-  "size": 231307,
-  "notes": "修复划词层：识别时保留划气泡，修复截屏位图回收/焦点空指针导致的崩溃，识别后显示注/问和选中文字预览；更新检测保留双源与版本号显示。"
+  "versionCode": 21,
+  "versionName": "0.1.20",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.20.apk",
+  "sha256": "4db156352d0457898123c89357e1d3724f57a8464631b2fedbb7ea9c4a2ebb6b",
+  "size": 235403,
+  "notes": "平板对齐电脑端：提示词自动同步、模型倍率显示、小框原生拖动、收藏/钉住图标、输入框不再弹注解；同时保留划词层崩溃修复。"
 }
