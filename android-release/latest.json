@@ -1,8 +1,8 @@
 {
-  "versionCode": 8,
-  "versionName": "0.1.7",
+  "versionCode": 9,
+  "versionName": "0.1.8",
   "url": "zhujie-tablet.apk",
-  "sha256": "9e95aa82f0ee086ff27413a1265e79abcb02d6625b49936541f908d47e382f76",
-  "size": 202436,
-  "notes": "对齐桌面提示词与默认模型；小框可拖动；修复关闭后按钮残留；错误可重试。"
+  "sha256": "33a63d415a8df9a4fe8409184984dce501188950a8a691e89cccdf41e7084647",
+  "size": 206532,
+  "notes": "OneNote 等不能划词时，点「抓」把页面文字抓进阅读器；提示词与模型对齐；小框可拖动；修复按钮残留。"
 }
