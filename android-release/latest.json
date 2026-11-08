@@ -1,8 +1,8 @@
 {
-  "versionCode": 11,
-  "versionName": "0.1.10",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.10.apk",
-  "sha256": "6b46301d7182dea25232e55f7ff8cdd6b2a26a825288b44292792ec04f3a076a",
+  "versionCode": 12,
+  "versionName": "0.1.11",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.11.apk",
+  "sha256": "35d3edc4f55b73ac89254472e9388b1a58b96ac16f46217375c8a3ea25085aa2",
   "size": 206532,
-  "notes": "更新检查改用 GitHub API 绕开缓存；安装包按版本命名；包含 OneNote 抓取、提示词与模型对齐。"
+  "notes": "修复无障碍开启状态误判；补全百炼文本模型并标注百炼版；包含 OneNote 抓取与更新修复。"
 }
