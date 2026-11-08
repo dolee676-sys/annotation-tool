@@ -1,0 +1,8 @@
+{
+  "versionCode": 6,
+  "versionName": "0.1.5",
+  "url": "zhujie-tablet.apk",
+  "sha256": "3f7902c8d5d96277d3254fa644fcf0f77fcc3ca82c8b11c1d0513c2db2ff4e16",
+  "size": 198340,
+  "notes": "修复划词小条一闪而过；更新源改为 GitHub raw；连接失败原因常驻显示。"
+}
