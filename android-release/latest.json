@@ -1,8 +1,8 @@
 {
-  "versionCode": 15,
-  "versionName": "0.1.14",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.14.apk",
-  "sha256": "7c86bea0829cc329b49264f0b2eadfd69f04c6ab827e98ebc4757d9789bbe2d3",
+  "versionCode": 16,
+  "versionName": "0.1.15",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.15.apk",
+  "sha256": "f48d1ffffca5183de57566a62d45d98cfec90dc65b905395e1fb6f4fd496fd7a",
   "size": 219019,
-  "notes": "更新下载校验安装包版本号，拒绝低版本；包含截屏识图与长按关闭抓。"
+  "notes": "抓取改为贴边小浮窗，不再居中大框；抓取页点词即可注解；增强划词识别与旋转后气泡复位。"
 }
