@@ -2,7 +2,7 @@
   "versionCode": 18,
   "versionName": "0.1.17",
   "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.17.apk",
-  "sha256": "8081f465dc58d84c21699123920da92de146b22d8279939b9de62c76efce5bba",
+  "sha256": "ff9acccdc53a81b1ba2a7614531ae2142f92a426b7ed0fa969490013a1416e76",
   "size": 231307,
   "notes": "新增划词层：点「划」后在原文上拖选文字，松手只识别选区并出现注/问；长按可选整页抓取、读剪贴板、关闭。"
 }
