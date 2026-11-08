@@ -1,8 +1,8 @@
 {
-  "versionCode": 7,
-  "versionName": "0.1.6",
+  "versionCode": 8,
+  "versionName": "0.1.7",
   "url": "zhujie-tablet.apk",
-  "sha256": "b180b04adc5756ea8306d07e3818c8f7c8b40da6d2b1665bc3b5496830ba0143",
+  "sha256": "9e95aa82f0ee086ff27413a1265e79abcb02d6625b49936541f908d47e382f76",
   "size": 202436,
-  "notes": "选中文字原地弹悬浮小框，不再跳转应用；划词按钮更稳定；额度错误中文提示。"
+  "notes": "对齐桌面提示词与默认模型；小框可拖动；修复关闭后按钮残留；错误可重试。"
 }
