@@ -2,7 +2,7 @@
   "versionCode": 19,
   "versionName": "0.1.18",
   "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.18.apk",
-  "sha256": "e8c3be2cacc00ec23a222bbd2168deddd61f6cf7dca750e31d03ca851f9ca366",
+  "sha256": "30d394090dc3cc4eb41140d5712d425a4c9be0b0acbcbda3617f66fc107bf178",
   "size": 231307,
   "notes": "修复更新检测：固定官方更新源，同时查 API 和 raw 两个源取最高版本，并直接显示当前/最新版本号；划词层保留。"
 }
