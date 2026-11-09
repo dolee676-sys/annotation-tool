@@ -1,8 +1,8 @@
 {
-  "versionCode": 1007,
-  "versionName": "0.1.29",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.29.apk",
-  "sha256": "4e1449b8234ea06a0cf983eff9613ede593ac56ef0af941a7aa453672a9afcf6",
+  "versionCode": 1008,
+  "versionName": "0.1.30",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.30.apk",
+  "sha256": "02d63ba1a4d07140f59f4e9b1c679023bb61537882724c87c7849df94d906a09",
   "size": 239499,
-  "notes": "关于页新增制作者署名（piona）、GitHub 地址，以及「点个 Star · 谢谢支持」。"
+  "notes": "面板二次划词刷新文本；未配置提示可点进设置；切服务商保留已输入 Key；CSP 去内联脚本；清理死代码。"
 }
