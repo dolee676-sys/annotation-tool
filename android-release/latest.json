@@ -1,8 +1,8 @@
 {
-  "versionCode": 1006,
-  "versionName": "0.1.28",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.28.apk",
-  "sha256": "f0d679848784486c8ebe3beaae792acaaf8a2b1022a37ea95bb5f698d642845b",
+  "versionCode": 1007,
+  "versionName": "0.1.29",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.29.apk",
+  "sha256": "4e1449b8234ea06a0cf983eff9613ede593ac56ef0af941a7aa453672a9afcf6",
   "size": 239499,
-  "notes": "选中文字后「注/问」小框出现更快；抓取页与阅读器选词工具条更跟手。"
+  "notes": "关于页新增制作者署名（piona）、GitHub 地址，以及「点个 Star · 谢谢支持」。"
 }
