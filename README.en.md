@@ -5,12 +5,13 @@
 [![CI](https://github.com/dolee676-sys/annotation-tool/actions/workflows/ci.yml/badge.svg)](https://github.com/dolee676-sys/annotation-tool/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows&logoColor=white)](#download-and-install-windows-1011)
+[![Android](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)](https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-latest.apk)
 
 **Select text in any app. AI explains it with the surrounding context. If the selection is a question, it answers first, then explains.**
 
-Works in OneNote, Word, PDF readers, browsers, and editors. Use a local model or your own cloud API key. Costs stay visible.
+Works in OneNote, Word, PDF readers, browsers, and editors. Use a local model or your own cloud API key. Costs stay visible. A companion Android tablet build is also available (personal use).
 
-[**Download for Windows**](https://github.com/dolee676-sys/annotation-tool/releases/latest) · [15-second demo](#demo) · [What it solves](#what-it-solves) · [First run](#first-run)
+[**Download for Windows**](https://github.com/dolee676-sys/annotation-tool/releases/latest) · [**Android tablet download**](https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-latest.apk) · [15-second demo](#demo) · [What it solves](#what-it-solves) · [First run](#first-run)
 
 > Made by piona · MIT License · [GitHub repository](https://github.com/dolee676-sys/annotation-tool)
 
@@ -56,6 +57,22 @@ Notes:
 - Config, history, and usage live in `%APPDATA%\zhujie`; the program can live on any drive.
 - Upgrade: quit the app, replace the program folder; data is preserved.
 - Uninstall: quit the app, delete the program folder and `%APPDATA%\zhujie`.
+
+## Android tablet (personal use)
+
+> A companion build for Android tablets, used on an OPPO Pad 4 Pro / Android 15. It is not published to app stores and the UI is Chinese. It shares the desktop answer logic, prompts, and price multipliers.
+>
+> Download (always the latest build): [zhujie-tablet-latest.apk](https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-latest.apk) — install it directly.
+>
+> Versioned packages and the update manifest live in the [android-release folder](https://github.com/dolee676-sys/annotation-tool/tree/main/android-release); see `latest.json` for the current version.
+
+- Install the APK (allow unknown sources for this install), add your cloud API key in Settings, pick a model and test. There is no local Ollama on the tablet.
+- Enable the "注解 · 划词" accessibility service in system settings; re-toggle it after each overwrite install.
+- Where an app exposes selection, a 注 / 问 (Explain / Ask) chip appears next to the text. In OneNote and similar apps that do not expose selection, tap the edge "划" bubble to freeze the page and drag over the text, or copy the text and use "读剪贴板" (read clipboard).
+- Screenshot OCR uses a Qwen vision model with your own key; answers, follow-ups, history, favorites, usage, multipliers, and the draggable / pinnable / favoritable panel behave like the desktop version.
+- Updates are checked in-app and verified with SHA-256 and version code; a package older than the installed one is rejected instead of being handed to the installer.
+
+Limits: personal, unsigned build (the system will warn on install); screenshot capture needs Android 11+ (minimum install Android 8); cloud OCR / answers send the selected text to the provider you configure, so avoid sensitive content.
 
 ## First run
 

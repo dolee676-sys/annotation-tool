@@ -5,12 +5,13 @@
 [![CI](https://github.com/dolee676-sys/annotation-tool/actions/workflows/ci.yml/badge.svg)](https://github.com/dolee676-sys/annotation-tool/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows&logoColor=white)](#下载安装windows-1011)
+[![Android](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)](https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-latest.apk)
 
 **在任意应用里选中文字，AI 结合上下文解释；选中问题先给答案，再解释。**
 
-OneNote、Word、PDF、浏览器、编辑器都能用。支持本机模型和云端模型，费用透明。
+OneNote、Word、PDF、浏览器、编辑器都能用。支持本机模型和云端模型，费用透明。另有 Android 平板配套版（自用）。
 
-[**下载 Windows 版**](https://github.com/dolee676-sys/annotation-tool/releases/latest) · [15 秒演示](#演示) · [它解决什么问题](#它解决什么问题) · [第一次配置](#第一次使用配置-ai)
+[**下载 Windows 版**](https://github.com/dolee676-sys/annotation-tool/releases/latest) · [**安卓版下载**](https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-latest.apk) · [15 秒演示](#演示) · [它解决什么问题](#它解决什么问题) · [第一次配置](#第一次使用配置-ai)
 
 > 制作：piona · MIT License · [GitHub 仓库](https://github.com/dolee676-sys/annotation-tool)
 
@@ -49,6 +50,40 @@ OneNote、Word、PDF、浏览器、编辑器都能用。支持本机模型和云
 - 程序放哪个盘都行；配置、历史、用量默认在 `%APPDATA%\zhujie`。
 - 升级：退出应用，替换程序文件夹即可，数据会保留。
 - 卸载：退出应用，删除程序文件夹、桌面快捷方式，再删除 `%APPDATA%\zhujie`。
+
+## 安卓版（Android 平板，自用）
+
+> 面向 Android 平板的配套版本，在 OPPO Pad 4 Pro / Android 15 上自用验证；不上架应用商店，界面为中文。与桌面版共用同一套回答逻辑、提示词和价目倍率。
+>
+> 下载（始终为最新构建）：[zhujie-tablet-latest.apk](https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-latest.apk)，下载后直接安装。
+>
+> 各版本安装包与更新清单都在 [android-release 目录](https://github.com/dolee676-sys/annotation-tool/tree/main/android-release)；当前版本号见 `latest.json`。
+
+### 安装与开启
+
+1. 下载 APK 并安装；系统提示「允许安装未知应用」时允许本次安装。
+2. 打开「注解」，在设置里填云端 API Key（通义千问 / DeepSeek 等），选模型并测试。平板版不含本机 Ollama。
+3. 到系统「设置 → 无障碍 → 注解 · 划词」开启服务；每次覆盖安装后建议关一次再开一次。
+4. 在会暴露选区的应用里选中文字，旁边出现「注 / 问」，点按即可注解或提问。
+
+### OneNote 等不暴露选区的应用
+
+- 点屏幕边缘的「划」：定格当前页面，在原文上拖选文字，松手后只识别选区并弹出「注 / 问」。
+- 或选中后点「复制」，再长按「划」→「读剪贴板」。
+- 截图识别走通义千问视觉模型，需要你的 Key 有相应额度；失败时会提示原因，不会静默卡住。
+
+### 与桌面版一致的部分
+
+- 注 / 问分开，词 / 问题 / 段落分流，多轮追问；提示词与桌面版同步。
+- 小框可拖动、可钉住、可收藏；模型倍率、历史、收藏、用量都只保存在本机。
+- 应用内检查更新：校验 SHA-256 与版本号，不会安装比当前更旧的包。
+
+### 限制
+
+- 仅自用、未上架；APK 未做商店签名，安装时系统会有提示。
+- 截屏取词需要 Android 11+；最低安装版本 Android 8。
+- OneNote / 部分文档应用不向无障碍接口暴露选区，自动小框不出现时用「划」或复制取词。
+- 云端识别 / 回答会把选中文字发送给你配置的服务商，不要用于敏感内容。
 
 ## 第一次使用：配置 AI
 
