@@ -1,8 +1,8 @@
 {
-  "versionCode": 1010,
-  "versionName": "0.1.32",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.32.apk",
-  "sha256": "39bf0c601fe1d0c819fb91e0670ea1fa9cdcad2766f65190aabb7f2b7cff2e70",
+  "versionCode": 1011,
+  "versionName": "0.1.33",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.33.apk",
+  "sha256": "e356f615576b06daa7d5b74eb31f3e8e1eb1df2275f61c8e83cd25f39d8efd4c",
   "size": 239499,
-  "notes": "去掉面板四周模糊阴影；选区识别等待时常驻「识别中…」提示；注/问小条不再带选中文字预览。"
+  "notes": "收藏改为卡片：标题由 AI 概括，回答默认收起、点开才看；与电脑端一致。"
 }
