@@ -1,8 +1,8 @@
 {
-  "versionCode": 1009,
-  "versionName": "0.1.31",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.31.apk",
-  "sha256": "7fcd1dc91593fc1a7a50bad09eb152d7e855426053863a71beaf0601629afaa1",
+  "versionCode": 1010,
+  "versionName": "0.1.32",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.32.apk",
+  "sha256": "39bf0c601fe1d0c819fb91e0670ea1fa9cdcad2766f65190aabb7f2b7cff2e70",
   "size": 239499,
-  "notes": "提问/追问现在会在小框与面板里显示你的问题和多轮会话；设置拆成模型/取词/通用/关于四组，不再一屏堆满。"
+  "notes": "去掉面板四周模糊阴影；选区识别等待时常驻「识别中…」提示；注/问小条不再带选中文字预览。"
 }
