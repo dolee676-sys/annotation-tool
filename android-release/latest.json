@@ -1,8 +1,8 @@
 {
-  "versionCode": 1008,
-  "versionName": "0.1.30",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.30.apk",
-  "sha256": "02d63ba1a4d07140f59f4e9b1c679023bb61537882724c87c7849df94d906a09",
+  "versionCode": 1009,
+  "versionName": "0.1.31",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.31.apk",
+  "sha256": "7fcd1dc91593fc1a7a50bad09eb152d7e855426053863a71beaf0601629afaa1",
   "size": 239499,
-  "notes": "面板二次划词刷新文本；未配置提示可点进设置；切服务商保留已输入 Key；CSP 去内联脚本；清理死代码。"
+  "notes": "提问/追问现在会在小框与面板里显示你的问题和多轮会话；设置拆成模型/取词/通用/关于四组，不再一屏堆满。"
 }
