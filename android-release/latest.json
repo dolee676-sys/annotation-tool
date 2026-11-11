@@ -1,8 +1,8 @@
 {
-  "versionCode": 1017,
-  "versionName": "0.1.39",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.39.apk",
-  "sha256": "e07a1fb87a935c2cd100b2d605c3fbc46e7347b73009c6bad6ca4acea2cf9099",
-  "size": 256011,
-  "notes": "新增首页（最近注解、用量统计、更新状态）；更新器多项修复；「注/问」按钮只在真正选中文字或划屏截图后出现，点一下不再误弹；无操作 3 秒自动收起。"
+  "versionCode": 1018,
+  "versionName": "0.1.40",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.40.apk",
+  "sha256": "e672c4324be2635c5d6fe5daa6f362f3707d6d98bb69f8249378e463449042dd",
+  "size": 260107,
+  "notes": "首页按墨纸朱砂重做；性能优化：划词扫描不再全树取全文、节点及时回收、设置密钥缓存、启动减负、AI 流式合并、面板 WebView 复用。"
 }
