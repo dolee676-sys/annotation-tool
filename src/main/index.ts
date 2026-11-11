@@ -12,15 +12,23 @@ import {
 import { mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { chat, isLocalBaseUrl, listModels } from './ai'
+import {
+  CHIP_AUTO_HIDE_MS,
+  buildModelOptions,
+  isAppAllowed,
+  isSameChipSelection,
+  normalizeApp,
+  normalizeForMatch,
+  panelResetPayload
+} from './annotationHelpers'
 import { listInstalledApps } from './apps'
 import { compressHistory } from './compress'
 import { getSelectionContext } from './context'
 import { FavoriteStore } from './favorites'
 import { HISTORY_REWRITE_BATCH, HistoryStore } from './history'
 import { buildSystemPrompt, buildUserMessage, markSelection } from './prompt'
-import { estimateCostCny, usageMultiplier } from '../shared/pricing'
+import { estimateCostCny } from '../shared/pricing'
 import { isFreeModel } from '../shared/presets'
-import { isChatModel } from '../shared/modelCatalog'
 import { resolveAnswerLocale, resolveLocale, translate, type Locale } from '../shared/i18n'
 import { SelectionService, isUsablePoint, toDipPoint, type Point, type RawSelection } from './selection'
 import { isTrustedRendererUrl, rendererFileUrl } from './security'
@@ -37,7 +45,6 @@ import type {
   HistoryCompressResult,
   PanelInit,
   PanelMode,
-  PanelModelOption,
   ProviderPatch,
   SettingsPatch,
   TestProviderResult
@@ -149,74 +156,12 @@ let chipTimer: NodeJS.Timeout | null = null
 let chipShowId = 0
 let selftestResolve: (() => void) | null = null
 
-function normalizeApp(name: string): string {
-  return name.trim().toLowerCase().replace(/\.exe$/, '')
-}
-
-function appAllowed(programName: string): boolean {
-  const s = settings.get()
-  if (s.filterMode === 'all') return true
-  const target = normalizeApp(programName)
-  if (!target) return false
-  return s.whitelist.some((entry) => {
-    const item = normalizeApp(entry)
-    return item.length > 0 && item === target
-  })
-}
-
 function hideChip(): void {
   if (chipTimer) {
     clearTimeout(chipTimer)
     chipTimer = null
   }
   windows.hideChip()
-}
-
-function buildModelOptions(currentProviderId: string, currentModel: string): PanelModelOption[] {
-  const options: PanelModelOption[] = []
-  for (const provider of settings.getProvidersView()) {
-    if (!isLocalBaseUrl(provider.baseUrl) && !provider.hasKey) continue
-    const local = isLocalBaseUrl(provider.baseUrl)
-    const providerKey = provider.presetId ?? provider.id
-    for (const model of provider.models) {
-      if (!isChatModel(providerKey, model)) continue
-      options.push({
-        providerId: provider.id,
-        providerName: provider.name,
-        presetId: providerKey,
-        model,
-        free: isFreeModel(provider.presetId, model, local),
-        multiplier: usageMultiplier({
-          model,
-          local,
-          fallbackIn: provider.priceIn,
-          fallbackOut: provider.priceOut,
-          useFallback: !provider.builtin
-        })
-      })
-    }
-  }
-  if (!options.some((o) => o.providerId === currentProviderId && o.model === currentModel)) {
-    const provider = settings.getProvider(currentProviderId)
-    if (provider && currentModel) {
-      const local = isLocalBaseUrl(provider.baseUrl)
-      options.unshift({
-        providerId: provider.id,
-        providerName: provider.name,
-        presetId: provider.presetId ?? provider.id,
-        model: currentModel,
-        free: isFreeModel(provider.presetId ?? provider.id, currentModel, local),
-        multiplier: usageMultiplier({
-          model: currentModel,
-          local,
-          fallbackIn: provider.priceIn,
-          fallbackOut: provider.priceOut,
-          useFallback: !provider.builtin
-        })
-      })
-    }
-  }
-  return options
 }
 
 function toScreenPoint(point: Point): Point {
@@ -263,7 +208,7 @@ function handleSelection(raw: RawSelection): void {
   settings.touchApp(programName)
   if (settings.get().detectedApps.length !== before) broadcastState()
 
-  if (!appAllowed(programName)) {
+  if (!isAppAllowed(settings.get(), programName)) {
     hideChip()
     return
   }
@@ -294,6 +239,11 @@ function handleSelection(raw: RawSelection): void {
   const display = screen.getDisplayNearestPoint(anchor)
   const preferAbove = anchor.y > display.workArea.y + display.workArea.height - 220
 
+  // 重复选区事件（同一段文字、同一位置、小框还在展示）不重新弹、不重置计时：
+  // 否则拖选 / 点击产生的重复事件会反复把自动隐藏往后推，小框迟迟不消失；
+  // 点小框外面时 240ms 后的延迟隐藏也会被重复事件取消（chipShowId 被顶掉）。
+  if (isSameChipSelection(activeSelection, text, anchor, windows.chipBounds() !== null)) return
+
   activeSelection = { text, programName, truncated, anchor, contextPoint, preferAbove }
   chipShowId += 1
   windows.showChip(anchor.x + 10, anchor.y + 8)
@@ -311,28 +261,11 @@ function handleSelection(raw: RawSelection): void {
   if (chipTimer) clearTimeout(chipTimer)
   chipTimer = setTimeout(() => {
     hideChip()
-  }, 15000)
+  }, CHIP_AUTO_HIDE_MS)
 }
 
 function sendPanelError(message: string): void {
   windows.sendPanel('panel:error', { message })
-}
-
-function panelResetPayload(
-  a: ActiveAnnotation,
-  providerName: string,
-  followUp = false,
-  question?: string
-): Record<string, unknown> {
-  return {
-    mode: a.mode,
-    followUp,
-    question,
-    providerId: a.providerId,
-    providerName,
-    model: a.model,
-    localOnly: settings.get().localOnly
-  }
 }
 
 async function runAnnotationRequest(
@@ -356,7 +289,13 @@ async function runAnnotationRequest(
   const provider = settings.getProvider(a.providerId)
   windows.sendPanel(
     'panel:reset',
-    panelResetPayload(a, provider?.name ?? a.providerId, options.followUp, options.question)
+    panelResetPayload(
+      a,
+      provider?.name ?? a.providerId,
+      settings.get().localOnly,
+      options.followUp,
+      options.question
+    )
   )
 
   if (!provider) {
@@ -603,10 +542,6 @@ function togglePanelFavorite(): FavoriteToggleResult {
   return { ok: true, favorited: true, id: item.id }
 }
 
-function normalizeForMatch(value: string): string {
-  return value.replace(/\s+/g, '').trim()
-}
-
 async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
   const sel = activeSelection
   if (!sel) return
@@ -664,7 +599,12 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
     providerId: provider.id,
     providerName: provider.name,
     model,
-    options: buildModelOptions(provider.id, model),
+    options: buildModelOptions(
+      settings.getProvidersView(),
+      (id) => settings.getProvider(id),
+      provider.id,
+      model
+    ),
     localOnly: s.localOnly,
     contextChars: 0,
     contextEnabled: contextEligible,
@@ -757,7 +697,10 @@ function switchPanelModel(providerId: string, model: string): boolean {
     void startAnnotation()
     return true
   }
-  windows.sendPanel('panel:reset', panelResetPayload(a, provider.name))
+  windows.sendPanel(
+    'panel:reset',
+    panelResetPayload(a, provider.name, settings.get().localOnly)
+  )
   return true
 }
 
@@ -941,7 +884,9 @@ function registerIpc(): void {
 
   handle('usage:get', () => usage.summary())
   handle('usage:clear', () => {
-    usage.clear()
+    if (!usage.clear()) {
+      throw new Error(mt('清空用量记录写入磁盘失败，请检查磁盘空间后重试。'))
+    }
     return usage.summary()
   })
 
