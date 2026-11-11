@@ -44,6 +44,20 @@ public final class Store {
     }
 
     /**
+     * 历史/收藏/用量用同步落盘：原来 append 走 apply()，写盘是异步的，
+     * 面板关掉后进程若很快被系统回收，最后一条记录可能只留在内存里。
+     * commit() 在 JS 桥接线程上跑（不是主线程），一次几毫秒到几十毫秒，
+     * 换来“答完即落盘、重启后还在”。设置仍走 apply()，不受影响。
+     */
+    public static synchronized void putSync(Context context, String key, String value) {
+        String stored = "settings".equals(key) ? encryptSetting(value) : value;
+        try {
+            prefs(context).edit().putString(key, stored).commit();
+        } catch (Exception ignored) {
+        }
+    }
+
+    /**
      * 性能：Keystore 密钥只取一次并缓存。原来每次读/写设置（Bridge.getSettings
      * 在 JS 里一次启动要调几十次）都要 KeyStore.getInstance + load(null) +
      * getKey，全是跨进程调用，硬件 Keystore 上一次能到几十毫秒；缓存后
@@ -128,6 +142,20 @@ public final class Store {
                 next.put(current.get(i));
             }
             put(context, key, next.toString());
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** 同 append，但同步落盘（见 putSync）：历史/收藏/用量追加都走这里。 */
+    public static synchronized void appendSync(Context context, String key, String json, int max) {
+        try {
+            JSONArray current = array(context, key);
+            JSONArray next = new JSONArray();
+            next.put(new JSONObject(json));
+            for (int i = 0; i < current.length() && i < max - 1; i++) {
+                next.put(current.get(i));
+            }
+            putSync(context, key, next.toString());
         } catch (Exception ignored) {
         }
     }

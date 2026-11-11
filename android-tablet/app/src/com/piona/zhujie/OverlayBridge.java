@@ -22,6 +22,11 @@ public class OverlayBridge {
         void setPinned(boolean pinned);
     }
 
+    /** 面板里有文字被选中时置 true，外部点按不再关面板（否则点系统复制菜单会先关面板）。 */
+    public interface SelectionAction {
+        void setSelectionActive(boolean active);
+    }
+
     private final Context context;
     private final WebView web;
     private final String text;
@@ -29,10 +34,12 @@ public class OverlayBridge {
     private final Runnable closeAction;
     private final PanelMover mover;
     private final PinnedAction pinnedAction;
+    private final SelectionAction selectionAction;
     private final Handler main = new Handler(Looper.getMainLooper());
 
     public OverlayBridge(Context context, WebView web, String text, boolean askMode,
-                         Runnable closeAction, PanelMover mover, PinnedAction pinnedAction) {
+                         Runnable closeAction, PanelMover mover, PinnedAction pinnedAction,
+                         SelectionAction selectionAction) {
         this.context = context;
         this.web = web;
         this.text = text == null ? "" : text;
@@ -40,6 +47,7 @@ public class OverlayBridge {
         this.closeAction = closeAction;
         this.mover = mover;
         this.pinnedAction = pinnedAction;
+        this.selectionAction = selectionAction;
     }
 
     @JavascriptInterface
@@ -80,7 +88,7 @@ public class OverlayBridge {
 
     @JavascriptInterface
     public void addHistory(String json) {
-        Store.append(context, "history", json, 500);
+        Store.appendSync(context, "history", json, 500);
     }
 
     @JavascriptInterface
@@ -90,7 +98,7 @@ public class OverlayBridge {
 
     @JavascriptInterface
     public void addFavorite(String json) {
-        Store.append(context, "favorites", json, 200);
+        Store.appendSync(context, "favorites", json, 200);
     }
 
     @JavascriptInterface
@@ -105,7 +113,7 @@ public class OverlayBridge {
 
     @JavascriptInterface
     public void addUsage(String json) {
-        Store.append(context, "usage", json, 1000);
+        Store.appendSync(context, "usage", json, 1000);
     }
 
     @JavascriptInterface
@@ -143,14 +151,35 @@ public class OverlayBridge {
         }
     }
 
+    /**
+     * 复制改同步返回 "true"/"false"：原来是 main.post 里写剪贴板、无返回值，
+     * JS 不管写没写成都 toast“已复制。”，个别 ROM 后台写剪贴板抛异常时
+     * 用户看到成功、实际什么都没复制。同步写在桥接线程上做（Binder 调用，
+     * 不需要主线程），成功才返回 "true"，前端按返回值决定 toast、失败时
+     * 再试 navigator.clipboard。
+     */
     @JavascriptInterface
-    public void copy(String value) {
-        main.post(() -> {
+    public String copy(String value) {
+        try {
             ClipboardManager manager =
                     (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+            if (manager == null) {
+                return "false";
+            }
             manager.setPrimaryClip(ClipData.newPlainText("注解",
                     value == null ? "" : value));
-        });
+            return "true";
+        } catch (Exception ignored) {
+            return "false";
+        }
+    }
+
+    /** 面板内有选区时调用，见 SelectionAction。 */
+    @JavascriptInterface
+    public void setSelectionActive(boolean active) {
+        if (selectionAction != null) {
+            selectionAction.setSelectionActive(active);
+        }
     }
 
     @JavascriptInterface

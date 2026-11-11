@@ -55,6 +55,38 @@ public class SelectionService extends AccessibilityService
         }
     };
 
+    /**
+     * “划”气泡看门狗：每 1.5 秒检查一次，气泡丢了就找回来。
+     * 0.1.40 上 Rick 遇到气泡“用着用着又消失了”——隐藏路径多（点划
+     * 藏气泡、面板藏气泡、总开关藏气泡），任何一条漏恢复，气泡就再
+     * 也不回来。逐条对照 0.1.38 没找到改坏的一步，所以不再赌“每条
+     * 路都记得恢复”，加一道兜底：只要不是本该藏着的状态就恢复。
+     * 判断在 BubbleWatchdog（纯函数，可单测），这里只做接线。
+     */
+    private final Runnable bubbleWatchdogRunnable = new Runnable() {
+        @Override
+        public void run() {
+            maybeRestoreBubble();
+            handler.postDelayed(this, PERIODIC_SCAN_MS);
+        }
+    };
+
+    private void maybeRestoreBubble() {
+        if (!connected || windowManager == null) {
+            return;
+        }
+        if (captureBubble == null || chipOverlay == null
+                || overlayPanel == null || screenshotOcr == null) {
+            return;
+        }
+        if (!BubbleWatchdog.shouldRestore(captureOff(), captureBubble.isDisabled(),
+                overlayPanel.isOpen(), screenshotOcr.isSelectionLayerShowing(),
+                screenshotOcr.isSelectionPending())) {
+            return;
+        }
+        captureBubble.ensureVisible();
+    }
+
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
@@ -72,6 +104,7 @@ public class SelectionService extends AccessibilityService
         captureBubble.create();
         applyCaptureMaster();
         handler.postDelayed(periodicScanRunnable, PERIODIC_SCAN_MS);
+        handler.postDelayed(bubbleWatchdogRunnable, PERIODIC_SCAN_MS);
     }
 
     public static boolean isConnected() {
@@ -132,6 +165,7 @@ public class SelectionService extends AccessibilityService
         connected = false;
         instance = null;
         handler.removeCallbacks(periodicScanRunnable);
+        handler.removeCallbacks(bubbleWatchdogRunnable);
         handler.removeCallbacks(scanRunnable);
         clipboardReader.stop();
         screenshotOcr.removeSelectionLayer();
@@ -439,6 +473,9 @@ public class SelectionService extends AccessibilityService
         chipOverlay.hide();
         screenshotOcr.removeSelectionLayer();
         captureBubble.setVisible(false);
+        // 先把 pending 置上：点划到截屏回调回来之间有 120ms + 截屏
+        // 耗时，看门狗这段时间别把刚藏起来的气泡又找回来闪一下。
+        screenshotOcr.beginSelection();
         handler.postDelayed(screenshotOcr::captureForSelection, 120);
     }
 
@@ -538,6 +575,7 @@ public class SelectionService extends AccessibilityService
         instance = null;
         state.selectionOcrToken++;
         handler.removeCallbacks(periodicScanRunnable);
+        handler.removeCallbacks(bubbleWatchdogRunnable);
         handler.removeCallbacks(scanRunnable);
         clipboardReader.stop();
         screenshotOcr.removeSelectionLayer();

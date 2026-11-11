@@ -5,6 +5,7 @@ import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.os.Handler;
+import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -37,6 +38,19 @@ public class OverlayPanel {
     private WindowManager.LayoutParams panelParams;
     private boolean panelPinned;
     /**
+     * 面板内有文字被选中时为 true：这时点外部不关面板，否则点系统选词
+     * 菜单的「复制」会先触发 ACTION_OUTSIDE 把面板关掉、选区随之消失。
+     * 由 JS 经 OverlayBridge.setSelectionActive 设置（桥接线程写，主线
+     * 程读，volatile 保证可见性）。
+     */
+    private volatile boolean selectionActive;
+    /**
+     * 面板代数：每次 show() +1。close() 里解绑 bridge 改为延后执行
+     * （见 close() 注释），代数用来判断延后任务跑起来时是不是已经有
+     * 新面板复用了同一个 WebView——是就不动新 bridge。
+     */
+    private int panelGeneration;
+    /**
      * 复用的面板 WebView：原来每次打开都 new WebView + 加载页面、关闭就
      * destroy，下次打开又要重付 WebView 创建 + 页面解析的固定开销，
      * 点「注」到面板出来要等一截。现在关面板时只 detach、不销毁，
@@ -57,8 +71,13 @@ public class OverlayPanel {
         return panelWeb != null || panelRoot != null;
     }
 
+    public void setSelectionActive(boolean active) {
+        selectionActive = active;
+    }
+
     public void show(String text, boolean ask, Rect bounds, boolean capture) {
         close();
+        panelGeneration++;
         if (windowManager == null) {
             return;
         }
@@ -118,7 +137,7 @@ public class OverlayPanel {
         panelWeb.setWebViewClient(new SafeWebViewClient(service));
         panelWeb.setOnTouchListener((view, event) -> {
             if (event.getActionMasked() == MotionEvent.ACTION_OUTSIDE) {
-                if (!panelPinned) {
+                if (!panelPinned && !selectionActive) {
                     close();
                     return true;
                 }
@@ -128,7 +147,8 @@ public class OverlayPanel {
         });
         panelWeb.addJavascriptInterface(
                 new OverlayBridge(service, panelWeb, text, ask, this::close,
-                        this::move, pinned -> panelPinned = pinned),
+                        this::move, pinned -> panelPinned = pinned,
+                        this::setSelectionActive),
                 "AndroidBridge");
         panelWeb.loadUrl(capture
                 ? "file:///android_asset/capture.html"
@@ -151,7 +171,7 @@ public class OverlayPanel {
             @Override
             public boolean dispatchTouchEvent(MotionEvent event) {
                 if (event.getActionMasked() == MotionEvent.ACTION_OUTSIDE) {
-                    if (!panelPinned) {
+                    if (!panelPinned && !selectionActive) {
                         close();
                         return true;
                     }
@@ -214,6 +234,16 @@ public class OverlayPanel {
         } catch (Exception exception) {
             close();
         }
+        // 键盘焦点：原来面板打开后 WebView 从没主动要过焦点，实体键盘
+        // 的按键进不到面板里——Shift+方向键选不了文字、Ctrl+C 也没选区
+        // 可拷。窗口本身是可聚焦的（没加 FLAG_NOT_FOCUSABLE），这里让
+        // WebView 打开就拿焦点，硬件键盘事件才能走 WebView 的原生处理。
+        try {
+            panelWeb.setFocusable(true);
+            panelWeb.setFocusableInTouchMode(true);
+            panelWeb.requestFocus();
+        } catch (Exception ignored) {
+        }
     }
 
     public void close() {
@@ -223,6 +253,7 @@ public class OverlayPanel {
         panelRoot = null;
         panelWeb = null;
         panelPinned = false;
+        selectionActive = false;
         if (root != null) {
             if (windowManager != null) {
                 try {
@@ -237,8 +268,28 @@ public class OverlayPanel {
             }
         }
         if (web != null) {
+            // 关键次序：cancelOwner 只是把 __aiDone 回调 post 到主线程，
+            // 它跑起来才会调 finish() → C.record() 存历史。原来这里同
+            // 步就 removeJavascriptInterface，等 __aiDone 落下来时
+            // window.AndroidBridge 已经没了，record() 掉进浏览器预览用
+            // 的 Mock、写进面板 WebView 自己的 localStorage，主界面
+            // （读 SharedPreferences）永远看不到——点外部关面板时
+            // 流式没跑完的追问就是这么丢的（点右上角 × 反而能存，因
+            // 为 JS 里先 C.cancel、回调先排队）。所以解绑延后到主线
+            // 程下一轮、且排在已 post 的 __aiDone 之后；代数 guard 保
+            // 证这期间若 show() 复用了同一个 WebView，不会误删新 bridge。
+            final WebView closingWeb = web;
+            final int closingGeneration = panelGeneration;
             try {
-                web.removeJavascriptInterface("AndroidBridge");
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    if (closingGeneration != panelGeneration) {
+                        return;
+                    }
+                    try {
+                        closingWeb.removeJavascriptInterface("AndroidBridge");
+                    } catch (Exception ignored) {
+                    }
+                });
                 web.stopLoading();
             } catch (Exception ignored) {
             }

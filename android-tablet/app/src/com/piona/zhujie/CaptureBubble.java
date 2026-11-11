@@ -176,6 +176,33 @@ public class CaptureBubble {
         }
     }
 
+    /**
+     * 看门狗自愈：气泡丢了（窗口被意外移除、某条隐藏路径漏恢复）就找
+     * 回来。用户亲手在长按菜单里点了“关闭划”的不复活；窗口还在、只
+     * 是被藏起来了的，改回可见即可。
+     */
+    public void ensureVisible() {
+        if (captureBubbleDisabled) {
+            return;
+        }
+        if (captureBubble == null) {
+            create();
+            return;
+        }
+        if (captureBubble.getParent() == null
+                && windowManager != null && captureParams != null) {
+            try {
+                windowManager.addView(captureBubble, captureParams);
+            } catch (Exception ignored) {
+                captureBubble = null;
+                return;
+            }
+        }
+        if (captureBubble.getVisibility() != View.VISIBLE) {
+            captureBubble.setVisibility(View.VISIBLE);
+        }
+    }
+
     public void updateForPackage(CharSequence packageName) {
         if (captureBubble == null || captureBubbleDisabled) {
             return;

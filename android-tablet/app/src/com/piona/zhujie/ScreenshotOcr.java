@@ -48,6 +48,18 @@ public class ScreenshotOcr {
     private WindowManager.LayoutParams selectionLayerParams;
     private TextView busyView;
     private WindowManager.LayoutParams busyParams;
+    /**
+     * 截屏看门狗：takeScreenshot 的回调在个别机型/状态下可能一直不回
+     * （窗口切换中途、上一张截屏还在处理），原来没有任何超时——回调
+     * 不回，气泡就永远藏着、截图层也永远不出现，Rick 看到的就是“点
+     * 了划拉不出截图框、气泡还消失了”。4 秒没回就当失败，toast + 恢
+     * 复气泡，让他能马上重划。代数用来防旧回调/旧超时串到新一次划选。
+     */
+    private static final long SCREENSHOT_TIMEOUT_MS = 4000;
+    private long screenshotGeneration;
+    private Runnable screenshotTimeoutRunnable;
+    /** 刚点划、正在等截屏回调：气泡看门狗这段时间别把气泡找回来闪一下。 */
+    private boolean selectionPending;
 
     public ScreenshotOcr(AccessibilityService service, Handler handler,
                          WindowManager windowManager, Host host) {
@@ -67,11 +79,23 @@ public class ScreenshotOcr {
             failSelection("当前系统不支持截屏取词。");
             return;
         }
+        selectionPending = true;
+        final long generation = ++screenshotGeneration;
+        if (screenshotTimeoutRunnable != null) {
+            handler.removeCallbacks(screenshotTimeoutRunnable);
+        }
+        screenshotTimeoutRunnable = () -> {
+            if (generation == screenshotGeneration && selectionLayer == null) {
+                failSelection("截屏超时，请重试。");
+            }
+        };
+        handler.postDelayed(screenshotTimeoutRunnable, SCREENSHOT_TIMEOUT_MS);
         try {
             service.takeScreenshot(Display.DEFAULT_DISPLAY, service.getMainExecutor(),
                     new AccessibilityService.TakeScreenshotCallback() {
                         @Override
                         public void onSuccess(AccessibilityService.ScreenshotResult result) {
+                            disarmScreenshotTimeout();
                             HardwareBuffer buffer = result.getHardwareBuffer();
                             try {
                                 Bitmap bitmap = Bitmap.wrapHardwareBuffer(
@@ -97,16 +121,39 @@ public class ScreenshotOcr {
 
                         @Override
                         public void onFailure(int errorCode) {
+                            disarmScreenshotTimeout();
                             failSelection("截屏失败（" + errorCode + "）。");
                         }
                     });
         } catch (Exception exception) {
+            disarmScreenshotTimeout();
             failSelection("截屏失败。");
         }
     }
 
+    private void disarmScreenshotTimeout() {
+        if (screenshotTimeoutRunnable != null) {
+            handler.removeCallbacks(screenshotTimeoutRunnable);
+        }
+    }
+
+    /** 点划后、截屏回调回来前：气泡看门狗别在这段时间把气泡找回来。 */
+    public void beginSelection() {
+        selectionPending = true;
+    }
+
+    public boolean isSelectionPending() {
+        return selectionPending;
+    }
+
+    public boolean isSelectionLayerShowing() {
+        return selectionLayer != null && selectionLayer.getParent() != null;
+    }
+
     private void showSelectionLayer(Bitmap bitmap) {
         if (windowManager == null) {
+            selectionPending = false;
+            disarmScreenshotTimeout();
             bitmap.recycle();
             host.restoreCaptureBubble();
             return;
@@ -145,11 +192,16 @@ public class ScreenshotOcr {
             host.restoreCaptureBubble();
             Toast.makeText(service, "无法显示划词层。", Toast.LENGTH_LONG).show();
         }
+        selectionPending = false;
+        disarmScreenshotTimeout();
     }
 
     private void runSelectionOcr(Rect bitmapRect, Rect screenRect) {
         SelectionLayerView layer = selectionLayer;
         if (layer == null) {
+            // 层已经没了（旋转/新划选把它撤了）还走到这里：原来直接静默
+            // return，气泡也不恢复——气泡就这么丢了。先把气泡找回来。
+            host.restoreCaptureBubble();
             return;
         }
         Bitmap source = layer.getBitmap();
@@ -223,6 +275,8 @@ public class ScreenshotOcr {
     }
 
     private void failSelection(String message) {
+        selectionPending = false;
+        disarmScreenshotTimeout();
         hideBusy();
         removeSelectionLayer();
         host.restoreCaptureBubble();

@@ -59,7 +59,7 @@ public class Bridge {
 
     @JavascriptInterface
     public void addHistory(String json) {
-        Store.append(activity, "history", json, 500);
+        Store.appendSync(activity, "history", json, 500);
     }
 
     @JavascriptInterface
@@ -69,7 +69,7 @@ public class Bridge {
 
     @JavascriptInterface
     public void addFavorite(String json) {
-        Store.append(activity, "favorites", json, 200);
+        Store.appendSync(activity, "favorites", json, 200);
     }
 
     @JavascriptInterface
@@ -89,7 +89,7 @@ public class Bridge {
 
     @JavascriptInterface
     public void addUsage(String json) {
-        Store.append(activity, "usage", json, 1000);
+        Store.appendSync(activity, "usage", json, 1000);
     }
 
     @JavascriptInterface
@@ -327,13 +327,24 @@ public class Bridge {
         activity.runOnUiThread(activity::finish);
     }
 
+    /**
+     * 复制改同步返回 "true"/"false"（理由同 OverlayBridge.copy）：
+     * 原来是 runOnUiThread 里写剪贴板、无返回值，前端不管成败都 toast
+     * “已复制。”。同步写在桥接线程上做，成功才返回 "true"。
+     */
     @JavascriptInterface
-    public void copy(String text) {
-        activity.runOnUiThread(() -> {
+    public String copy(String text) {
+        try {
             ClipboardManager manager =
                     (ClipboardManager) activity.getSystemService(Context.CLIPBOARD_SERVICE);
+            if (manager == null) {
+                return "false";
+            }
             manager.setPrimaryClip(ClipData.newPlainText("注解", text == null ? "" : text));
-        });
+            return "true";
+        } catch (Exception ignored) {
+            return "false";
+        }
     }
 
     @JavascriptInterface
