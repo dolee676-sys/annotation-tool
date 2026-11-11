@@ -68,9 +68,9 @@ button { cursor: pointer; }
   background: transparent;
   color: var(--ink);
   font-size: 12.5px;
-  padding: 9px 14px;
-  /* 触控目标尽量 ≥48dp：主按钮最小高度 48px，次要小按钮 40px。 */
-  min-height: 48px;
+  padding: 8px 14px;
+  /* 按钮按内容定高，不再硬凑 48dp：平板 + 键盘使用，36px 视觉上不笨重，点按仍够用。 */
+  min-height: 36px;
   border-radius: 10px;
   transition: 0.15s;
 }
@@ -84,18 +84,18 @@ button { cursor: pointer; }
 .btn.ghost { border-color: transparent; color: var(--muted); }
 .btn.ghost:hover { color: var(--ink); }
 .btn.danger { color: var(--danger); border-color: rgba(160, 44, 34, 0.3); }
-.btn.small { font-size: 11px; padding: 6px 10px; min-height: 40px; border-radius: 8px; }
+.btn.small { font-size: 11px; padding: 5px 10px; min-height: 30px; border-radius: 8px; }
 .btn:disabled { opacity: 0.5; cursor: default; }
 
 .icon-btn {
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1;
   padding: 4px 6px;
-  min-width: 40px;
-  min-height: 40px;
+  min-width: 32px;
+  min-height: 32px;
   border-radius: 8px;
 }
 .icon-btn:hover { color: var(--ink); background: rgba(34, 31, 26, 0.05); }

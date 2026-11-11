@@ -30,8 +30,8 @@
   background: transparent;
   color: var(--muted);
   font-size: 13px;
-  padding: 7px 17px;
-  min-height: 44px;
+  padding: 6px 16px;
+  min-height: 36px;
   border-radius: 9px;
   transition: 0.15s;
 }
@@ -281,8 +281,8 @@ main { flex: 1; min-height: 0; position: relative; }
   background: transparent;
   color: var(--muted);
   font-size: 11.5px;
-  padding: 6px 13px;
-  min-height: 40px;
+  padding: 5px 12px;
+  min-height: 32px;
   border-radius: 8px;
 }
 .seg button.on { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(48, 38, 25, 0.1); }
@@ -432,12 +432,9 @@ main { flex: 1; min-height: 0; position: relative; }
   .stats { grid-template-columns: 1fr; }
 }
 
-/* 首页（按 anthropics/skills frontend-design 重做，2026-11-11）：
-   主题取自“批注”本身：墨、纸、朱砂印。浓色只用在一处（朱砂），
-   其余保持安静；结构本身表达层级——问候只用字型，最近注解是
-   横线分隔的清单，模型与用量共用全页唯一一块面板，更新无新版
-   时只是一行字，不占一张卡。全部规则只在 #view-home 内生效，
-   不动其他页。 */
+/* 首页主题（沿用 v1 的墨 / 纸 / 朱砂印，不改色板）：
+   浓色只用在一处（朱砂），其余保持安静；结构本身表达层级。
+   全部规则只在 #view-home 内生效，不动其他页。 */
 #view-home {
   --hp-paper: #F8F7F3;
   --hp-ink: #1D2733;
@@ -460,68 +457,50 @@ main { flex: 1; min-height: 0; position: relative; }
     --hp-surface: #1E2227;
   }
 }
-#view-home .btn.primary { background: var(--hp-seal); border-color: var(--hp-seal); color: #FFF7F2; }
-#view-home .badge { background: var(--hp-seal-soft); color: var(--hp-seal); }
 #view-home :focus-visible { outline: 2px solid var(--hp-seal); outline-offset: 2px; }
 
-.home { max-width: 1060px; margin: 0 auto; padding: 32px 28px 72px; overflow-y: auto; height: 100%; }
-.home-hero { padding: 6px 2px 26px; }
-.home-date { margin: 0 0 6px; font-size: 12.5px; color: var(--hp-muted); }
-.home-hero h1 { font-family: var(--serif); font-size: 34px; font-weight: 600; margin: 0; letter-spacing: 0.01em; line-height: 1.25; color: var(--hp-ink); }
-.home-reading { margin: 16px 0 0; padding-left: 14px; border-left: 3px solid var(--hp-seal); font-family: var(--serif); font-size: 16px; line-height: 1.9; color: var(--hp-ink); }
+/* 首页 v2（2026-11-11，anthropics/skills frontend-design「克制」一节 +
+   极简首页做法）：一屏只做一件事——回来继续读。单栏窄幅，大量留白；
+   朱砂只花在一处（开始阅读按钮），其余只用字型、字号和间距分层；
+   模型 / 划词 / 版本 / 用量不再各占板块，收到底部一行小字，
+   用量明细和模型配置都在记录 / 设置页里。全部规则只在 #view-home 内生效。 */
+.home { max-width: 680px; margin: 0 auto; padding: 44px 28px 72px; overflow-y: auto; height: 100%; }
+.home-hero { padding: 0 0 26px; }
+.home-date { margin: 0 0 8px; font-size: 12.5px; color: var(--hp-muted); }
+.home-hero h1 { font-family: var(--serif); font-size: 30px; font-weight: 600; margin: 0; letter-spacing: 0.01em; line-height: 1.3; color: var(--hp-ink); }
+.home-reading { margin: 14px 0 0; font-family: var(--serif); font-size: 16px; line-height: 1.9; color: var(--hp-ink); }
 .home-lede { margin: 14px 0 0; font-size: 13.5px; line-height: 1.9; color: var(--hp-muted); }
 
-.home-actions { display: flex; flex-direction: column; margin-bottom: 30px; }
-.home-primary { align-self: flex-start; display: flex; align-items: baseline; gap: 10px; background: var(--hp-seal); color: #FFF7F2; border: 0; border-radius: 12px; min-height: 52px; padding: 12px 22px; cursor: pointer; transition: 0.15s; }
+.home-actions { margin-bottom: 44px; }
+/* 页上唯一的实色块：一个动作，一行字，不带副标题（副标题和引导语重复）。 */
+.home-primary { display: inline-flex; align-items: center; background: var(--hp-seal); color: #FFF7F2; border: 0; border-radius: 10px; min-height: 40px; padding: 10px 22px; font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.15s; }
 .home-primary:hover { filter: brightness(1.07); }
-.home-primary b { font-size: 15.5px; }
-.home-primary span { font-size: 12.5px; opacity: 0.85; }
-.home-status-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: transparent; border: 0; border-top: 1px solid var(--hp-line); padding: 8px 2px; min-height: 52px; cursor: pointer; }
-.home-status-row:hover { background: rgba(127, 127, 127, 0.08); }
-.home-dot { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--hp-muted); flex: none; }
-.home-dot.on { background: var(--ok); border-color: var(--ok); }
-.home-status-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.home-status-text b { font-size: 13.5px; font-weight: 600; color: var(--hp-ink); }
-.home-status-text span { font-size: 12px; color: var(--hp-muted); }
 
-.home-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 40px; align-items: start; }
-.home-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
-.home-section-head h2, .home-panel h2 { font-size: 14px; font-weight: 600; margin: 0; color: var(--hp-ink); }
-.home-link { border: 0; background: transparent; color: var(--hp-seal); font-size: 12.5px; padding: 6px 8px; min-height: 48px; cursor: pointer; }
+.home-recent { margin-bottom: 44px; }
+.home-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.home-section-head h2 { font-size: 14px; font-weight: 600; margin: 0; color: var(--hp-ink); }
+.home-link { border: 0; background: transparent; color: var(--hp-seal); font-size: 12.5px; padding: 4px 6px; min-height: 32px; cursor: pointer; }
 .home-link:hover { text-decoration: underline; }
 .home-link:disabled { opacity: 0.5; cursor: default; }
 
+/* 最近注解：横线分隔的安静列表，一行一条，只有标题和时间——
+   不再贴「注解 / 提问」徽标、不再列 token 和花费（那些在记录详情里）。 */
 .home-rec-list { display: block; }
-#view-home .home-rec { background: transparent; border: 0; border-top: 1px solid var(--hp-line); border-radius: 0; padding: 14px 2px; box-shadow: none; transform: none; cursor: pointer; }
+#view-home .home-rec { display: flex; align-items: baseline; gap: 14px; background: transparent; border: 0; border-top: 1px solid var(--hp-line); border-radius: 0; padding: 13px 2px; box-shadow: none; transform: none; cursor: pointer; }
 #view-home .home-rec:last-child { border-bottom: 1px solid var(--hp-line); }
-#view-home .home-rec:hover { background: rgba(127, 127, 127, 0.08); border-color: var(--hp-line); box-shadow: none; transform: none; }
-#view-home .home-rec .rec-top { color: var(--hp-muted); }
-#view-home .home-rec .rec-title { color: var(--hp-ink); }
-#view-home .home-rec .rec-foot { color: var(--hp-muted); }
-.home-empty { border: 1px dashed var(--hp-line); border-radius: 14px; padding: 26px 22px; color: var(--hp-muted); font-size: 13px; line-height: 1.9; }
-.home-empty .row { margin-top: 14px; }
+#view-home .home-rec:hover { background: rgba(127, 127, 127, 0.06); }
+#view-home .home-rec .rec-title { display: block; flex: 1; min-width: 0; margin: 0; font-size: 14px; font-weight: 500; line-height: 1.5; color: var(--hp-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; -webkit-line-clamp: unset; }
+#view-home .home-rec .rec-time { flex: none; font-size: 11.5px; color: var(--hp-muted); white-space: nowrap; }
 
-.home-side { display: flex; flex-direction: column; }
-.home-panel { background: var(--hp-surface); border: 1px solid var(--hp-line); border-radius: 18px; padding: 20px 22px; }
-.home-panel + .home-panel { margin-top: 16px; }
-.home-panel h2 { margin-bottom: 12px; }
-.home-line { font-size: 13px; line-height: 1.9; margin: 0 0 6px; color: var(--hp-ink); }
-.home-line.muted { color: var(--hp-muted); font-size: 12px; }
-.home-panel .row { margin-top: 12px; }
-.home-divider { border-top: 1px solid var(--hp-line); margin: 18px 0 16px; }
-.home-stats { grid-template-columns: repeat(2, 1fr); gap: 16px 12px; margin-bottom: 4px; }
-.home-stats .stat { background: transparent; border: 0; border-radius: 0; padding: 0; }
-.home-stats .stat b { font-size: 24px; color: var(--hp-ink); }
-.home-stats .stat span { color: var(--hp-muted); }
-.home-update { border-color: rgba(166, 58, 42, 0.35); background: var(--hp-seal-soft); }
-.home-update-quiet { margin: 16px 2px 0; font-size: 12.5px; line-height: 1.8; color: var(--hp-muted); }
-.home-update-quiet b { color: var(--hp-ink); }
+/* 底部一行状态：模型、划词、版本写成一句小字，动作只是文字链接。 */
+.home-foot { margin: 0; padding-top: 18px; border-top: 1px solid var(--hp-line); font-size: 12px; line-height: 2; color: var(--hp-muted); }
+.home-foot .home-link { color: var(--hp-muted); text-decoration: underline; text-underline-offset: 3px; }
+.home-foot .home-link:hover { color: var(--hp-seal); }
 
 @media (prefers-reduced-motion: reduce) {
-  #view-home .home-primary, #view-home .home-status-row, #view-home .home-rec { transition: none; }
+  #view-home .home-primary, #view-home .home-rec { transition: none; }
 }
 @media (max-width: 720px) {
-  .home { padding: 22px 16px 60px; }
-  .home-hero h1 { font-size: 28px; }
-  .home-grid { grid-template-columns: 1fr; gap: 28px; }
+  .home { padding: 26px 16px 60px; }
+  .home-hero h1 { font-size: 26px; }
 }
