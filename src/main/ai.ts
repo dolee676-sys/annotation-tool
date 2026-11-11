@@ -106,7 +106,7 @@ async function chatOllama(options: ChatOptions): Promise<ChatResult> {
         { role: 'system', content: options.system },
         { role: 'user', content: options.user }
       ],
-      options: { temperature: 0.3 }
+      options: { temperature: 0.2, num_predict: 700 }
     })
   })
   if (!res.ok) throw new Error(await readError(res))
@@ -191,7 +191,8 @@ async function chatOpenAI(options: ChatOptions): Promise<ChatResult> {
       model: options.model,
       stream: true,
       stream_options: { include_usage: true },
-      temperature: 0.3,
+      temperature: 0.2,
+      max_tokens: 700,
       messages: [
         { role: 'system', content: options.system },
         { role: 'user', content: options.user }
