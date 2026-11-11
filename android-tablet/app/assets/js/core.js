@@ -230,10 +230,20 @@
     };
   }
 
+  // 设置原文缓存：原来每次 getSettings() 都要走一次桥接 + Java 侧
+  // Keystore 解密，而 modelOf/baseUrlOf/keyOf/getProvider/buildRequest
+  // 在一次启动里要调几十次；现在只读一次桥接，后面只做 JSON.parse。
+  // 只缓存原文串、每次返回新解析出的对象，调用方改字段不会污染缓存；
+  // saveSettings() 会清掉缓存，下次再读就是新值。
+  var cachedSettingsJson = null;
+
   function getSettings() {
     var stored = {};
     try {
-      stored = JSON.parse(invoke('getSettings') || '{}');
+      if (cachedSettingsJson === null) {
+        cachedSettingsJson = invoke('getSettings') || '{}';
+      }
+      stored = JSON.parse(cachedSettingsJson);
     } catch (exception) {
       stored = {};
     }
@@ -262,6 +272,10 @@
     }
     var provider = getProvider(settings);
     if (!settings.model) settings.model = provider.models[0];
+    // 返回前把合并后的设置也写回缓存：首次启动的提示词迁移会在上面
+    // 调 saveSettings() 清掉缓存，这里补上，第二次调用就不用再读桥接。
+    // 缓存的是 JSON 串、每次返回新解析出的对象，调用方改字段不污染缓存。
+    cachedSettingsJson = JSON.stringify(settings);
     return settings;
   }
 
@@ -330,6 +344,7 @@
   }
 
   function saveSettings(settings) {
+    cachedSettingsJson = null;
     invoke('saveSettings', JSON.stringify(settings));
   }
 
