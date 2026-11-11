@@ -16,6 +16,7 @@ import java.util.Base64;
  *     app/src/com/piona/zhujie/TokenEstimator.java \
  *     app/src/com/piona/zhujie/HttpSupport.java \
  *     app/src/com/piona/zhujie/ChipGate.java \
+ *     app/src/com/piona/zhujie/BubbleWatchdog.java \
  *     tests/JavaPureTest.java
  *   java -cp /tmp/zhujie-test-classes com.piona.zhujie.JavaPureTest
  *
@@ -261,6 +262,22 @@ public final class JavaPureTest {
         scanShowingOther.shownBounds = b1;
         check("扫描 正在展示但换了一段弹",
                 ChipGate.shouldShowScan("世界", b2, t0 + 1000, scanShowingOther));
+
+        // ---- BubbleWatchdog.shouldRestore：气泡丢了什么时候该找回来 ----
+        check("看门狗 都正常就恢复",
+                BubbleWatchdog.shouldRestore(false, false, false, false, false));
+        check("看门狗 总开关关了不恢复",
+                !BubbleWatchdog.shouldRestore(true, false, false, false, false));
+        check("看门狗 用户亲手关了划不恢复",
+                !BubbleWatchdog.shouldRestore(false, true, false, false, false));
+        check("看门狗 面板开着不恢复",
+                !BubbleWatchdog.shouldRestore(false, false, true, false, false));
+        check("看门狗 正在拖选不恢复",
+                !BubbleWatchdog.shouldRestore(false, false, false, true, false));
+        check("看门狗 刚点划等截屏不恢复",
+                !BubbleWatchdog.shouldRestore(false, false, false, false, true));
+        check("看门狗 关了+面板开着也不恢复",
+                !BubbleWatchdog.shouldRestore(true, false, true, false, false));
 
         System.out.println("----");
         System.out.println("通过 " + passed + "，失败 " + failed);

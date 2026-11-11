@@ -23,6 +23,8 @@ value: '',
 hidden: false,
 disabled: false,
 checked: false,
+tagName: 'DIV',
+style: {},
 classList: { add() {}, remove() {}, toggle() {}, contains() { return false;}},
 listeners: {},
 addEventListener(name, fn) { this.listeners[name] = fn;},
@@ -31,7 +33,27 @@ getAttribute() { return null;},
 scrollIntoView() {},
 focus() {},
 closest() { return null;},
+contains() { return false;},
+appendChild() {},
 };
+}
+
+// 可配的假选区：测试里改 text/collapsed/anchorNode 模拟用户选词。
+function makeFakeSelection() {
+const sel = {
+text: '',
+isCollapsed: true,
+rangeCount: 0,
+anchorNode: null,
+ranges: [],
+toString() { return this.isCollapsed ? '' : this.text; },
+getRangeAt() {
+return { getBoundingClientRect: () => ({ left: 50, bottom: 100, top: 60, right: 150 }) };
+},
+removeAllRanges() { this.ranges = []; this.rangeCount = 0; this.isCollapsed = true; },
+addRange(range) { this.ranges.push(range); this.rangeCount = this.ranges.length; this.isCollapsed = false; },
+};
+return sel;
 }
 
 function loadScripts(extraInvoke) {
@@ -42,6 +64,10 @@ if (!elements.has(selector)) elements.set(selector, makeElement());
 return elements.get(selector);
 };
 const invokeCalls = [];
+const clipboardWrites = [];
+const docListeners = {};
+const winListeners = {};
+const fakeSelection = makeFakeSelection();
 const sandbox = {
 console,
 setTimeout,
@@ -50,6 +76,14 @@ setInterval,
 clearInterval,
 Map,
 JSON,
+URLSearchParams,
+location: { search: '?mode=annotate&text=注意力残留测试文本' },
+requestAnimationFrame: (fn) => setTimeout(fn, 0),
+innerWidth: 400,
+innerHeight: 800,
+navigator: { clipboard: { writeText: (t) => { clipboardWrites.push(t); return Promise.resolve(); } } },
+getSelection: () => fakeSelection,
+addEventListener(name, fn) { (winListeners[name] = winListeners[name] || []).push(fn); },
 localStorage: {
 getItem: (k) => (store.has(k)? store.get(k): null),
 setItem: (k, v) => store.set(k, String(v)),
@@ -58,7 +92,10 @@ removeItem: (k) => store.delete(k),
 document: {
 querySelector: (sel) => getEl(sel),
 querySelectorAll: () => [],
-addEventListener() {},
+getElementById: (id) => getEl('#' + id),
+addEventListener(name, fn) { (docListeners[name] = docListeners[name] || []).push(fn); },
+createRange: () => ({ node: null, selectNodeContents(el) { this.node = el; } }),
+createElement: () => makeElement(),
 },
 };
 sandbox.window = sandbox;
@@ -82,7 +119,47 @@ if (r!== undefined) return r;
 }
 return origInvoke.apply(C, [name,...args]);
 };
-return { sandbox, C, store, elements, getEl, invokeCalls};
+return { sandbox, C, store, elements, getEl, invokeCalls, clipboardWrites,
+fakeSelection, docListeners, winListeners,
+fireDocument(name, event) { (docListeners[name] || []).forEach((fn) => fn(event)); },
+fireWindow(name, event) { (winListeners[name] || []).forEach((fn) => fn(event)); } };
+}
+
+// 面板/抓取页按需加载：先把 threadHtml 换成纯文本版，绕开沙箱里没有的 DOMPurify。
+// 再预置一个假 Key，否则 init 会停在“还没填 API Key”不跑对话。
+function presetKey(env) {
+env.store.set('zj.settings', JSON.stringify({
+providerId: 'qwen', model: 'deepseek-v4.1-flash', keys: { qwen: 'fake-key-for-test' } }));
+}
+function loadPanel(extraInvoke) {
+const env = loadScripts(extraInvoke);
+presetKey(env);
+env.C.threadHtml = function (turns, q, a) { return a || ''; };
+vm.runInContext(
+fs.readFileSync(path.join(JS_DIR, 'panel.js'), 'utf8'), env.sandbox, { filename: 'panel.js' });
+return env;
+}
+function loadCapture(extraInvoke) {
+const env = loadScripts(extraInvoke);
+presetKey(env);
+env.C.threadHtml = function (turns, q, a) { return a || ''; };
+vm.runInContext(
+fs.readFileSync(path.join(JS_DIR, 'capture.js'), 'utf8'), env.sandbox, { filename: 'capture.js' });
+return env;
+}
+
+// 键盘事件假对象：target 缺省为 #answer。
+function keyEvent(env, overrides) {
+const event = {
+target: env.getEl('#answer'), ctrlKey: false, metaKey: false,
+key: '', keyCode: 0, isComposing: false,
+preventDefault() { this.defaultPrevented = true; },
+defaultPrevented: false,
+};
+return Object.assign(event, overrides || {});
+}
+function historyOf(env) {
+return JSON.parse(env.store.get('zj.history') || '[]');
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms)); // vm 539f578b5f524e0d540cFf0cdeepEqual 524d51485f524e0053163002
@@ -364,4 +441,141 @@ H.render();
 const empty = getEl('#homeBody').innerHTML;
 assert.ok(empty.includes('还没有注解'), '没有历史时应给空状态指引');
 assert.ok(empty.includes('开始阅读'), '空状态应有一键去阅读');
+});
+
+test('core：record 含 turns 时写进记录，不传时不写', () => {
+const { C, store} = loadScripts();
+presetKey({ store });
+const turns = [{ question: 'Q1', answer: 'A1' }, { question: 'Q2', answer: 'A2' }];
+const rec = C.record('ask', '选文', 'Q2', 'A2', null, 10, 0, null, turns);
+assert.equal(rec.turns.length, 2);
+assert.equal(rec.turns[1].question, 'Q2');
+const list = JSON.parse(store.get('zj.history') || '[]');
+assert.equal(list[0].turns.length, 2);
+const rec2 = C.record('annotate', '选文', '', 'A0', null, 10, 0, null);
+assert.equal(rec2.turns, undefined);
+});
+
+test('panel：Ctrl+C 有选区时复制选区文本（桥成功，不走兜底）', async () => {
+const env = loadPanel((name) => (name === 'copy' ? 'true' : undefined));
+await sleep(1600);
+env.fakeSelection.text = '注意力残留';
+env.fakeSelection.isCollapsed = false;
+env.fakeSelection.rangeCount = 1;
+env.fakeSelection.anchorNode = env.getEl('#answer');
+env.fireDocument('keydown', keyEvent(env, { ctrlKey: true, key: 'c', keyCode: 67 }));
+assert.ok(env.invokeCalls.some((c) => c[0] === 'copy' && c[1] === '注意力残留'), '应调 bridge 复制选区');
+assert.equal(env.clipboardWrites.length, 0, '桥成功时不走 navigator.clipboard');
+assert.ok(env.invokeCalls.some((c) => c[0] === 'toast' && c[1] === '已复制。'));
+});
+
+test('panel：Ctrl+C 桥失败时走剪贴板兜底', async () => {
+const env = loadPanel((name) => (name === 'copy' ? 'false' : undefined));
+await sleep(1600);
+env.fakeSelection.text = '注意力残留';
+env.fakeSelection.isCollapsed = false;
+env.fakeSelection.rangeCount = 1;
+env.fakeSelection.anchorNode = env.getEl('#answer');
+env.fireDocument('keydown', keyEvent(env, { ctrlKey: true, key: 'c', keyCode: 67 }));
+assert.ok(env.invokeCalls.some((c) => c[0] === 'copy'), '先试 bridge');
+assert.deepEqual(env.clipboardWrites, ['注意力残留'], '桥失败后应走剪贴板 API');
+});
+
+test('panel：Ctrl+C 无选区时复制整段答案', async () => {
+const env = loadPanel((name) => (name === 'copy' ? 'true' : undefined));
+await sleep(1600);
+env.fakeSelection.isCollapsed = true;
+env.fakeSelection.rangeCount = 0;
+env.fireDocument('keydown', keyEvent(env, { ctrlKey: true, key: 'c', keyCode: 67 }));
+const copy = env.invokeCalls.find((c) => c[0] === 'copy');
+assert.ok(copy && copy[1].includes('词义'), '无选区应复制整段答案');
+});
+
+test('panel：焦点在输入框时 Ctrl+C 不拦截', async () => {
+const env = loadPanel((name) => (name === 'copy' ? 'true' : undefined));
+await sleep(1600);
+env.getEl('#input').tagName = 'INPUT';
+env.fireDocument('keydown', keyEvent(env, {
+target: env.getEl('#input'), ctrlKey: true, key: 'c', keyCode: 67 }));
+assert.equal(env.invokeCalls.filter((c) => c[0] === 'copy').length, 0, '输入框里的 Ctrl+C 应留给输入框自己');
+});
+
+test('panel：Ctrl+A 全选答案', async () => {
+const env = loadPanel();
+await sleep(1600);
+env.fireDocument('keydown', keyEvent(env, { ctrlKey: true, key: 'a', keyCode: 65 }));
+assert.equal(env.fakeSelection.ranges.length, 1, '应建立一个选区');
+assert.equal(env.fakeSelection.ranges[0].node, env.getEl('#answer'), '选区应覆盖 #answer');
+});
+
+test('panel：长按选词气泡显隐 + setSelectionActive', async () => {
+const env = loadPanel();
+await sleep(1600);
+env.fakeSelection.text = '注意力残留';
+env.fakeSelection.isCollapsed = false;
+env.fakeSelection.rangeCount = 1;
+env.fakeSelection.anchorNode = env.getEl('#answer');
+env.fireDocument('selectionchange');
+await sleep(200);
+assert.equal(env.getEl('#selCopy').hidden, false, '有选区应亮出气泡');
+assert.ok(env.invokeCalls.some((c) => c[0] === 'setSelectionActive' && c[1] === true));
+env.fakeSelection.isCollapsed = true;
+env.fakeSelection.rangeCount = 0;
+env.fakeSelection.text = '';
+env.fireDocument('selectionchange');
+await sleep(200);
+assert.equal(env.getEl('#selCopy').hidden, true, '选区清空应收起气泡');
+assert.ok(env.invokeCalls.some((c) => c[0] === 'setSelectionActive' && c[1] === false));
+});
+
+test('panel：多轮追问各存一条且含完整 turns', async () => {
+const env = loadPanel();
+await sleep(1600);
+assert.equal(historyOf(env).length, 1);
+env.getEl('#input').value = '那和走神有什么区别？';
+env.getEl('#send').listeners.click();
+await sleep(1800);
+env.getEl('#input').value = '有什么办法减少注意力残留？';
+env.getEl('#send').listeners.click();
+await sleep(1800);
+const list = historyOf(env);
+assert.equal(list.length, 3, '首次注解 + 两次追问应各存一条');
+assert.equal(list[0].question, '有什么办法减少注意力残留？');
+assert.equal(list[0].turns.length, 3, '最新记录应带完整三轮 turns');
+assert.deepEqual(list[0].turns.map((t) => t.question),
+['', '那和走神有什么区别？', '有什么办法减少注意力残留？']);
+assert.equal(list[1].turns.length, 2);
+assert.equal(list[2].turns.length, 1);
+});
+
+test('panel：pagehide 补记未存轮次，流式回来不重复记', async () => {
+const env = loadPanel();
+await sleep(1600);
+assert.equal(historyOf(env).length, 1);
+env.getEl('#input').value = '那和走神有什么区别？';
+env.getEl('#send').listeners.click();
+await sleep(400);
+env.fireWindow('pagehide');
+assert.equal(historyOf(env).length, 2, '关面板时应补记流式中的追问');
+assert.equal(historyOf(env)[0].question, '那和走神有什么区别？');
+env.fireWindow('pagehide');
+assert.equal(historyOf(env).length, 2, '重复 pagehide 不应多记');
+await sleep(1800);
+assert.equal(historyOf(env).length, 2, '流式回调回来也不应重复记');
+});
+
+test('capture：空状态下复制/选区/pagehide 都不崩不误记', async () => {
+const env = loadCapture();
+env.getEl('#copy').listeners.click();
+assert.ok(env.invokeCalls.some((c) => c[0] === 'toast' && c[1] === '还没有答案。'));
+assert.equal(env.invokeCalls.filter((c) => c[0] === 'copy').length, 0);
+env.fireDocument('keydown', keyEvent(env, { ctrlKey: true, key: 'c', keyCode: 67 }));
+assert.equal(env.invokeCalls.filter((c) => c[0] === 'copy').length, 0, '没答案时 Ctrl+C 不应复制空串');
+env.fireWindow('pagehide');
+assert.equal(historyOf(env).length, 0, '没答案时 pagehide 不应记空记录');
+env.fakeSelection.isCollapsed = true;
+env.fakeSelection.rangeCount = 0;
+env.fireDocument('selectionchange');
+await sleep(200);
+assert.equal(env.getEl('#selCopy').hidden, true);
 });
