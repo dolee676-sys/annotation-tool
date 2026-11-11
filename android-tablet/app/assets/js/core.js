@@ -102,6 +102,19 @@
       localStorage.setItem('zj.favorites', '[]');
       localStorage.setItem('zj.usage', '[]');
     },
+    importRecords: function (historyJson, favoritesJson, usageJson) {
+      try {
+        var history = mergeRecords(JSON.parse(localStorage.getItem('zj.history') || '[]'), JSON.parse(historyJson), 500);
+        var favorites = mergeRecords(JSON.parse(localStorage.getItem('zj.favorites') || '[]'), JSON.parse(favoritesJson), 200);
+        var usage = mergeRecords(JSON.parse(localStorage.getItem('zj.usage') || '[]'), JSON.parse(usageJson), 1000);
+        localStorage.setItem('zj.history', JSON.stringify(history));
+        localStorage.setItem('zj.favorites', JSON.stringify(favorites));
+        localStorage.setItem('zj.usage', JSON.stringify(usage));
+        return history.length + '/' + favorites.length + '/' + usage.length;
+      } catch (exception) {
+        return '';
+      }
+    },
     chat: function (requestJson, id) {
       mockChat(requestJson, id);
     },
@@ -540,6 +553,24 @@
     });
   }
 
+  /**
+   * 备份恢复用的合并：按 id 去重，已有的保留不动，新来的按原顺序追加，
+   * 超过上限时从末尾截断。纯函数，可离线单测；备份导出/导入（Bridge）
+   * 的历史、收藏、用量都走它。
+   */
+  function mergeRecords(existing, incoming, cap) {
+    var list = (existing || []).slice();
+    var seen = {};
+    list.forEach(function (item) { if (item && item.id) seen[item.id] = true; });
+    (incoming || []).forEach(function (item) {
+      if (!item || !item.id || seen[item.id]) return;
+      seen[item.id] = true;
+      list.push(item);
+    });
+    var limit = cap > 0 ? cap : list.length;
+    return list.slice(0, limit);
+  }
+
   window.ZJCore = {
     invoke: invoke,
     getSettings: getSettings,
@@ -565,6 +596,7 @@
     addFavorite: addFavorite,
     removeFavorite: function (id) { invoke('removeFavorite', id); },
     record: record,
+    mergeRecords: mergeRecords,
     costOf: costOf,
     formatCost: formatCost,
     formatTime: formatTime,

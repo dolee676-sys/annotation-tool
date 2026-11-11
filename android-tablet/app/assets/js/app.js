@@ -3,13 +3,13 @@
   var $ = function (selector) { return document.querySelector(selector); };
   var OFFICIAL_UPDATE_URL = 'https://api.github.com/repos/dolee676-sys/annotation-tool/contents/android-release/latest.json';
   var state = {
-    tab: 'read',
+    tab: 'home',
     recTab: 'history',
     reader: { text: '', title: '', blocks: [] },
     selection: null,
     currentList: [],
     settings: C.getSettings(),
-    update: { checking: false, downloading: false, available: false, data: null, uri: null },
+    update: window.ZJUpdate.state,
     pane: {
       mode: null,
       lastMode: 'annotate',
@@ -28,45 +28,6 @@
   var els = {};
   var renderPending = false;
   var toastTimer = null;
-  var updateHandlers = new Map();
-  var toolbarShownAt = 0;
-  var toolbarHideTimer = null;
-
-  window.__updateResult = function (id, data) {
-    var handler = updateHandlers.get(id);
-    if (!handler) return;
-    updateHandlers.delete(id);
-    if (handler.onResult) handler.onResult(data || {});
-  };
-  window.__updateProgress = function (id, percent) {
-    var handler = updateHandlers.get(id);
-    if (handler && handler.onProgress) handler.onProgress(percent);
-  };
-  window.__updateDownloaded = function (id, uri, versionName, versionCode) {
-    var handler = updateHandlers.get(id);
-    if (!handler) return;
-    updateHandlers.delete(id);
-    if (handler.onDownloaded) handler.onDownloaded(uri, versionName, versionCode);
-  };
-  window.__updateNeedPermission = function (id) {
-    var handler = updateHandlers.get(id);
-    if (!handler) return;
-    updateHandlers.delete(id);
-    if (handler.onNeedPermission) handler.onNeedPermission();
-  };
-  window.__updateInstalling = function (id, detail) {
-    var handler = updateHandlers.get(id);
-    if (!handler) return;
-    updateHandlers.delete(id);
-    if (handler.onInstalling) handler.onInstalling(detail);
-  };
-  window.__updateError = function (id, message) {
-    var handler = updateHandlers.get(id);
-    if (!handler) return;
-    updateHandlers.delete(id);
-    if (handler.onError) handler.onError(message || '更新失败');
-  };
-
   function init() {
     els.tabs = $('#tabs');
     els.readHome = $('#readHome');
@@ -101,7 +62,23 @@
     bindPane();
     bindRecords();
     bindSettings();
-    bindUpdate();
+    window.ZJUpdate.setUi({
+      toast: toast,
+      switchTab: switchTab,
+      onUpdateChange: function () {
+        if (state.tab === 'home') window.ZJHome.render();
+      }
+    });
+    window.ZJUpdate.bind();
+    window.ZJHome.setUi({
+      switchTab: switchTab,
+      openDetail: openDetail,
+      showSettingsGroup: showSettingsGroup,
+      showUsage: showUsageTab,
+      toast: toast
+    });
+    window.ZJHome.bind();
+    window.ZJHome.render();
     bindAccessibility();
     bindGlobal();
 
@@ -112,12 +89,13 @@
     els.currentVersion.textContent = C.invoke('getVersion') || '—';
     setTimeout(function () {
       if (state.settings.autoCheckUpdates !== false && state.settings.updateUrl) {
-        checkUpdate(true);
+        window.ZJUpdate.check(true);
       }
     }, 1500);
 
     window.__handleBack = handleBack;
     window.__filePicked = onFilePicked;
+    window.__backupPicked = onBackupPicked;
     window.__openSettings = function () {
       switchTab('settings');
       return true;
@@ -188,6 +166,7 @@
       view.classList.toggle('on', view.id === 'view-' + tab);
     });
     hideToolbar();
+    if (tab === 'home') window.ZJHome.render();
     if (tab === 'records') renderRecords();
     if (tab === 'settings') renderSettings();
   }
@@ -213,6 +192,36 @@
     }
     els.pasteText.value = text;
     startReading(text);
+  }
+
+  function onBackupPicked(text) {
+    var backup = null;
+    try {
+      backup = JSON.parse(text || '');
+    } catch (exception) {
+      backup = null;
+    }
+    if (!backup || backup.format !== 'zhujie-backup'
+        || !Array.isArray(backup.history)
+        || !Array.isArray(backup.favorites)
+        || !Array.isArray(backup.usage)) {
+      toast('这个文件不是注解的备份。');
+      return;
+    }
+    var history = C.mergeRecords(C.getHistory(), backup.history, 500);
+    var favorites = C.mergeRecords(C.getFavorites(), backup.favorites, 200);
+    var usage = C.mergeRecords(C.getUsage(), backup.usage, 1000);
+    var result = C.invoke('importRecords',
+      JSON.stringify(history), JSON.stringify(favorites), JSON.stringify(usage));
+    if (!result) {
+      toast('导入失败：备份写回本机时出错。');
+      return;
+    }
+    var parts = String(result).split('/');
+    toast('已恢复：历史 ' + (parts[0] || 0) + ' 条、收藏 ' + (parts[1] || 0)
+      + ' 条、用量 ' + (parts[2] || 0) + ' 条。Key 不在备份里，需要重新填一次。');
+    if (state.tab === 'records') renderRecords();
+    if (state.tab === 'home') window.ZJHome.render();
   }
 
   function startReading(text) {
@@ -606,8 +615,8 @@
       showHome();
       return true;
     }
-    if (state.tab !== 'read') {
-      switchTab('read');
+    if (state.tab !== 'home') {
+      switchTab('home');
       return true;
     }
     return false;
@@ -649,6 +658,16 @@
       }
       if (record) openDetail(record);
     });
+  }
+
+  function showUsageTab() {
+    state.recTab = 'usage';
+    Array.prototype.forEach.call(document.querySelectorAll('#recSeg button'), function (item) {
+      var on = item.getAttribute('data-rec') === 'usage';
+      item.classList.toggle('on', on);
+      item.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    switchTab('records');
   }
 
   function renderRecords() {
@@ -903,6 +922,13 @@
       toast('已清空。');
       if (state.tab === 'records') renderRecords();
     });
+
+    $('#exportBackup').addEventListener('click', function () {
+      C.invoke('exportBackup');
+    });
+    $('#importBackup').addEventListener('click', function () {
+      C.invoke('importBackup');
+    });
   }
 
   function bindAccessibility() {
@@ -981,172 +1007,6 @@
     refreshCaptureStatus();
   }
 
-  function bindUpdate() {
-    $('#checkUpdate').addEventListener('click', function () {
-      checkUpdate(false);
-    });
-    $('#manualUpdate').addEventListener('click', function () {
-      var ver = state.update.data && state.update.data.latestVersion;
-      var url = ver
-        ? 'https://github.com/dolee676-sys/annotation-tool/releases/tag/android-v' + ver
-        : 'https://github.com/dolee676-sys/annotation-tool/releases';
-      C.invoke('openUrl', url);
-    });
-    $('#downloadUpdate').addEventListener('click', function () {
-      if (state.update.uri) installUpdate(state.update.uri);
-      else downloadUpdate();
-    });
-    $('#autoUpdate').addEventListener('change', function () {
-      state.settings.autoCheckUpdates = this.checked;
-      C.saveSettings(state.settings);
-    });
-    $('#updateBannerClose').addEventListener('click', function () {
-      $('#updateBanner').hidden = true;
-    });
-    $('#updateBannerBtn').addEventListener('click', function () {
-      switchTab('settings');
-      var card = $('#updateCard');
-      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      if (state.update.uri) installUpdate(state.update.uri);
-      else if (state.update.available) downloadUpdate();
-      else checkUpdate(false);
-    });
-  }
-
-  function setUpdateStatus(text) {
-    var element = $('#updateStatus');
-    if (element) element.textContent = text || '';
-  }
-
-  function checkUpdate(silent) {
-    if (state.update.checking) return;
-    var url = OFFICIAL_UPDATE_URL;
-    state.settings.updateUrl = url;
-    state.update.checking = true;
-    state.update.uri = null;
-    setUpdateStatus('检查中…');
-    $('#downloadUpdate').hidden = true;
-    var id = C.uid('upd');
-    updateHandlers.set(id, {
-      onResult: function (data) {
-        state.update.checking = false;
-        state.update.downloading = false;
-        $('#downloadUpdate').disabled = false;
-        state.update.data = data;
-        state.update.available = !!data.available;
-        var latest = (data.latestVersion || '—')
-          + ' (' + (data.versionCode || '?') + ')';
-        if (data.available) {
-          var text = '发现新版本 ' + latest + '，当前 '
-            + (data.currentVersion || '—')
-            + (data.notes ? '：' + data.notes : '');
-          setUpdateStatus(text);
-          $('#downloadUpdate').hidden = false;
-          $('#downloadUpdate').textContent = '下载并安装';
-          $('#updateBannerText').textContent = '发现新版本 ' + latest;
-          $('#updateBanner').hidden = false;
-          if (!silent) toast('发现新版本 ' + latest);
-        } else {
-          state.update.available = false;
-          setUpdateStatus('已是最新：当前 ' + (data.currentVersion || '—')
-            + ' · 最新 ' + latest);
-          $('#updateBanner').hidden = true;
-          if (!silent) toast('已是最新：' + (data.currentVersion || '') + ' / ' + latest);
-        }
-      },
-      onError: function (message) {
-        state.update.checking = false;
-        state.update.downloading = false;
-        $('#downloadUpdate').disabled = false;
-        setUpdateStatus('检查失败：' + message);
-        if (!silent) toast('检查失败：' + message);
-      }
-    });
-    C.invoke('checkUpdate', url, id);
-  }
-
-  function downloadUpdate() {
-    var data = state.update.data;
-    if (!data || !data.available) {
-      checkUpdate(false);
-      return;
-    }
-    if (!data.url || !data.sha256) {
-      toast('更新清单不完整，缺少下载地址或校验值。');
-      return;
-    }
-    if (state.update.downloading) return;
-    state.update.downloading = true;
-    var button = $('#downloadUpdate');
-    button.disabled = true;
-    button.textContent = '下载中…';
-    setUpdateStatus('准备下载…');
-    var id = C.uid('upd');
-    var lastProgressAt = Date.now();
-    var watchdog = setInterval(function () {
-      if (!state.update.downloading) {
-        clearInterval(watchdog);
-        return;
-      }
-      if (Date.now() - lastProgressAt > 30000) {
-        clearInterval(watchdog);
-        state.update.downloading = false;
-        button.disabled = false;
-        button.textContent = '重试下载';
-        setUpdateStatus('下载超时（网络不稳）。可点「手动下载」用浏览器下载。');
-        toast('下载超时，可点「手动下载」。');
-      }
-    }, 4000);
-    updateHandlers.set(id, {
-      onProgress: function (percent) {
-        lastProgressAt = Date.now();
-        setUpdateStatus('下载中 ' + percent + '%');
-      },
-      onDownloaded: function (uri, versionName, versionCode) {
-        clearInterval(watchdog);
-        state.update.downloading = false;
-        state.update.uri = uri;
-        button.disabled = false;
-        button.textContent = '安装更新';
-        setUpdateStatus('下载完成 ' + (versionName || '') + ' ('
-          + (versionCode || '') + ')，正在打开安装界面…');
-        installUpdate(uri);
-      },
-      onError: function (message) {
-        clearInterval(watchdog);
-        state.update.downloading = false;
-        button.disabled = false;
-        button.textContent = '重试下载';
-        setUpdateStatus('下载失败：' + message + '（可点「手动下载」）');
-        toast('下载失败：' + message);
-      }
-    });
-    C.invoke('downloadUpdate', data.url, data.sha256,
-      String(data.versionCode || ''), data.latestVersion || '', id);
-  }
-
-  function installUpdate(uri) {
-    if (!uri) return;
-    var id = C.uid('upd');
-    updateHandlers.set(id, {
-      onNeedPermission: function () {
-        $('#downloadUpdate').hidden = false;
-        $('#downloadUpdate').disabled = false;
-        $('#downloadUpdate').textContent = '安装更新';
-        setUpdateStatus('请允许「注解」安装未知应用，然后点“安装更新”。');
-        toast('请先允许安装未知应用。');
-      },
-      onInstalling: function (detail) {
-        setUpdateStatus((detail ? detail + '；' : '') + '已打开系统安装界面，请点“安装”。');
-      },
-      onError: function (message) {
-        setUpdateStatus('无法安装：' + message);
-        toast('无法安装：' + message);
-      }
-    });
-    C.invoke('installUpdate', uri, id);
-  }
-
   function saveSettingsForm(showToast) {
     var settings = state.settings;
     settings.providerId = settings.providerId || 'qwen';
@@ -1204,20 +1064,7 @@
     $('#ocrEnabled').checked = settings.ocrEnabled !== false;
     $('#captureMaster').checked = C.invoke('isCaptureMaster') === 'true';
     $('#updateUrl').value = OFFICIAL_UPDATE_URL;
-    if (state.update.uri) {
-      $('#downloadUpdate').hidden = false;
-      $('#downloadUpdate').disabled = false;
-      $('#downloadUpdate').textContent = '安装更新';
-      setUpdateStatus('下载完成，点“安装更新”。');
-    } else if (state.update.available && state.update.data) {
-      $('#downloadUpdate').hidden = false;
-      $('#downloadUpdate').disabled = false;
-      $('#downloadUpdate').textContent = '下载并安装';
-      setUpdateStatus('发现新版本 ' + (state.update.data.latestVersion || ''));
-    } else if (!state.update.checking && !state.update.downloading) {
-      $('#downloadUpdate').hidden = true;
-      setUpdateStatus('');
-    }
+    window.ZJUpdate.syncView();
     updateModelChip();
   }
 
