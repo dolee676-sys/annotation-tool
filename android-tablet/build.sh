@@ -14,9 +14,9 @@ D8_JAR="$BT/lib/d8.jar"
 # versionCode 必须单调递增（Android 只安装比已装更大的 versionCode）。
 # 不要按 versionName 生成小数字（如 25），否则会低于已装的 1000+ 导致更新失败。
 # 当前从 1000 起手动递增：1000=0.1.22, 1001=0.1.23, 1002=0.1.24, 1003=0.1.25, 1004=0.1.26, 1005=0.1.27, 1006=0.1.28, 1007=0.1.29, 1008=0.1.30, 1009=0.1.31, 1010=0.1.32, 1011=0.1.33, 1012=0.1.34, 1013=0.1.35, 1014=0.1.36, 1015=0.1.37, 1016=0.1.38 ...
-VERSION_CODE=1016
-VERSION_NAME=0.1.38
-NOTES="更新稳定性：检查时重置下载按钮、下载 30s 无进度自动超时回收（不再卡灰）、新增「手动下载」用浏览器兜底；下载连接/读取超时收紧。"
+VERSION_CODE=1017
+VERSION_NAME=0.1.39
+NOTES="新增首页（最近注解、用量统计、更新状态）；更新器多项修复；「注/问」按钮只在真正选中文字或划屏截图后出现，点一下不再误弹；无操作 3 秒自动收起。"
 
 cd "$ROOT"
 
@@ -68,10 +68,23 @@ echo "[6/7] 对齐"
 "$ZIPALIGN" -f -p 4 build/base.apk build/aligned.apk
 
 echo "[7/7] 签名"
+# 签名连续性守卫：keystore 丢了就等于丢了已装应用的更新资格，
+# 绝不能悄悄生成一个新 keystore 蒙混过去。
+# 首次在新机器上建 keystore 时，显式加 ALLOW_NEW_KEYSTORE=1 才生成。
 if [ ! -f keystore/zhujie.jks ]; then
+  if [ "${ALLOW_NEW_KEYSTORE:-0}" != "1" ]; then
+    echo "错误：找不到 keystore/zhujie.jks。" >&2
+    echo "这个 keystore 是已装应用的签名，丢了它，新编的包就无法覆盖安装、" >&2
+    echo "平板上的应用内更新也会被拒绝（签名不一致）。" >&2
+    echo "如果你确实是在新机器上第一次建 keystore，用原 keystore 恢复它；" >&2
+    echo "确认要新建一个（旧应用将无法直接更新，须先备份再卸载重装）时，" >&2
+    echo "再显式执行：ALLOW_NEW_KEYSTORE=1 bash build.sh" >&2
+    exit 1
+  fi
   mkdir -p keystore
   PASS="$(openssl rand -hex 16)"
   printf '%s' "$PASS" > keystore/password.txt
+  chmod 600 keystore/password.txt
   keytool -genkeypair \
     -keystore keystore/zhujie.jks \
     -alias zhujie \
@@ -82,6 +95,7 @@ if [ ! -f keystore/zhujie.jks ]; then
     -keypass "$PASS" \
     -dname "CN=Zhujie, O=Piona, C=CN" \
     -storetype PKCS12 >/dev/null 2>&1
+  echo "已新建 keystore（新签名！旧应用无法直接更新，见 OPTIMIZATION_REPORT.md 签名一节）"
 fi
 PASS="$(cat keystore/password.txt)"
 java --enable-native-access=ALL-UNNAMED -jar "$APKSIGNER" sign \
