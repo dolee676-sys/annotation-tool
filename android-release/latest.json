@@ -1,8 +1,8 @@
 {
-  "versionCode": 1015,
-  "versionName": "0.1.37",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.37.apk",
-  "sha256": "f41060d6c3cb6db4e15981fa051a1b5fa80dcb1032776d904c89aa09558c438a",
-  "size": 239499,
-  "notes": "关闭取词总开关时，同时去掉系统选中菜单里的「注解/提问」入口（禁用相关活动），开启时恢复；启动按状态同步。"
+  "versionCode": 1016,
+  "versionName": "0.1.38",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.38.apk",
+  "sha256": "5a68f96da5734544ecaaa4b3f37745ccf4cfd618161bf7d3f430d546587ad7cf",
+  "size": 243595,
+  "notes": "更新稳定性：检查时重置下载按钮、下载 30s 无进度自动超时回收（不再卡灰）、新增「手动下载」用浏览器兜底；下载连接/读取超时收紧。"
 }
