@@ -528,10 +528,15 @@
     els.paneSend.disabled = false;
     els.paneSend.textContent = '发送';
     var elapsed = Date.now() - pane.started;
+    // 本轮为止的完整问答串，随记录一起存，历史详情里能看到全串。
+    var thread = pane.turns.slice();
+    if (pane.question || pane.answer) {
+      thread.push({ question: pane.question, answer: pane.answer });
+    }
 
     if (error) {
       var rec = C.record(pane.lastMode, pane.text, pane.question, pane.answer, null, elapsed,
-        pane.context.length, error);
+        pane.context.length, error, thread);
       pane.rec = rec;
       renderAnswer();
       showPaneError(error);
@@ -540,7 +545,7 @@
     }
 
     var record = C.record(pane.lastMode, pane.text, pane.question, pane.answer, usage, elapsed,
-      pane.context.length, null);
+      pane.context.length, null, thread);
     pane.rec = record;
     renderAnswer();
     var cost = C.formatCost(record.cost);
@@ -715,6 +720,10 @@
       + (ask ? '提问' : '注解') + '</span><span>' + C.escapeHtml(C.formatTime(record.ts))
       + '</span><span>' + C.escapeHtml(record.model || '') + '</span></div>'
       + '<div class="rec-text">' + C.escapeHtml(record.text || '') + '</div>'
+      // 提问记录把问题也印出来：同一段文字的多次追问卡片原来长得一模
+      // 样（只显示选中文字），看着像只存了一条。
+      + (ask && record.question
+        ? '<div class="note">问：' + C.escapeHtml(record.question) + '</div>' : '')
       + '<div class="rec-answer">' + C.escapeHtml(record.answer || record.error || '') + '</div>'
       + '<div class="rec-foot"><span>' + C.formatTokens(record.totalTokens) + ' tokens</span>'
       + '<span>' + C.formatCost(record.cost) + '</span><span class="spacer"></span>' + remove + '</div>'
@@ -775,14 +784,30 @@
     var already = C.getFavorites().some(function (item) {
       return item.text === record.text && (item.question || '') === (record.question || '');
     });
+    // 有追问串的记录展开全部轮次（每轮一问一答）；老记录没有 turns 字段，
+    // 保持原来只显示当前问答。
+    var detailBody = '';
+    if (record.turns && record.turns.length > 1) {
+      detailBody = record.turns.map(function (turn, index) {
+        return (turn.question
+          ? '<p class="note">问题 ' + (index + 1) + '：' + C.escapeHtml(turn.question) + '</p>'
+          : '')
+          + '<div class="md" style="margin-top:8px">'
+          + C.renderMarkdown(turn.answer || '') + '</div>';
+      }).join('');
+    } else {
+      detailBody = (record.question
+        ? '<p class="note">问题：' + C.escapeHtml(record.question) + '</p>' : '')
+        + '<div class="md" style="margin-top:12px">'
+        + C.renderMarkdown(record.answer || record.error || '') + '</div>';
+    }
     els.modalCard.innerHTML = '<div class="modal-head">'
       + '<span class="badge' + (ask ? ' ask' : '') + '">' + (ask ? '提问' : '注解') + '</span>'
       + '<b>' + C.escapeHtml(record.providerName || '') + ' · ' + C.escapeHtml(record.model || '') + '</b>'
       + '<span class="meta">' + C.escapeHtml(C.formatTime(record.ts)) + '</span>'
       + '<button class="icon-btn" data-close="1" aria-label="关闭">×</button></div>'
       + '<div class="modal-body"><div class="quote">' + C.escapeHtml(record.text || '') + '</div>'
-      + (record.question ? '<p class="note">问题：' + C.escapeHtml(record.question) + '</p>' : '')
-      + '<div class="md" style="margin-top:12px">' + C.renderMarkdown(record.answer || record.error || '') + '</div>'
+      + detailBody
       + '<div class="modal-actions"><button class="btn small" id="detailCopy">复制答案</button>'
       + '<button class="btn small" id="detailFavorite">' + (already ? '已收藏' : '收藏') + '</button>'
       + '<button class="btn small ghost" data-close="1">关闭</button></div>'
@@ -793,8 +818,34 @@
       button.addEventListener('click', closeModal);
     });
     $('#detailCopy').addEventListener('click', function () {
-      C.invoke('copy', record.answer || '');
-      toast('已复制。');
+      var text = record.answer || '';
+      if (!text) {
+        toast('没有可复制的内容。');
+        return;
+      }
+      var result = null;
+      try {
+        result = C.invoke('copy', text);
+      } catch (exception) {
+        result = null;
+      }
+      if (result === 'true' || result === true) {
+        toast('已复制。');
+        return;
+      }
+      try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard
+          && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () {
+            toast('已复制。');
+          }, function () {
+            toast('复制失败，请长按选择复制。');
+          });
+          return;
+        }
+      } catch (exception) {
+      }
+      toast('复制失败，请长按选择复制。');
     });
     $('#detailFavorite').addEventListener('click', function () {
       if (already) {

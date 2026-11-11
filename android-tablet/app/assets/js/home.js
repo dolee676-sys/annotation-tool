@@ -1,10 +1,13 @@
 /**
- * 首页（window.ZJHome）。
+ * 首页（window.ZJHome）v2。
  *
- * 只读本机已有数据，不新增联网：问候 + 今日一句（最新一条历史，
- * 没有历史时用固定文案）、快捷入口、最近注解、模型状态、用量小结、
- * 更新状态（复用 ZJUpdate，不另写一套）。
- * 点最近注解进详情、去用量等跨模块动作由 app.js 通过 setUi 交进来，
+ * 一屏只做一件事：回来继续读。只留问候、一句「最近在读」、
+ * 一个主要动作（开始阅读）、最近 3 条注解（安静的列表）、
+ * 底部一行状态小字（模型 / 划词 / 版本，有新版时才多一句）。
+ * 模型面板、用量四格、更新面板、划词与模型两行状态全部砍掉：
+ * 用量明细在记录页，模型配置和更新在设置页，顶部已有更新横幅。
+ * 只读本机已有数据，不新增联网。
+ * 点最近注解进详情、去设置等跨模块动作由 app.js 通过 setUi 交进来，
  * home.js 自己不碰 app.js 的内部状态。
  */
 (function () {
@@ -70,50 +73,28 @@
     return '选中一段文字，点「注」，就能看到词义和语境。';
   }
 
+  /** 最近注解的一行：只有标题和时间，不贴徽标、不列 token 和花费。 */
   function recentCard(record) {
-    var ask = record.mode === 'ask';
     var title = record.title
       || (record.question || record.text || '').replace(/\s+/g, ' ').trim().slice(0, 30)
       || '注解';
     return '<article class="rec-card home-rec" data-id="' + C.escapeHtml(record.id) + '">'
-      + '<div class="rec-top"><span class="badge' + (ask ? ' ask' : '') + '">'
-      + (ask ? '提问' : '注解') + '</span><span>' + C.escapeHtml(C.formatTime(record.ts)) + '</span></div>'
       + '<div class="rec-title">' + C.escapeHtml(title) + '</div>'
-      + '<div class="rec-foot"><span>' + C.formatTokens(record.totalTokens) + ' tokens</span>'
-      + '<span>' + C.formatCost(record.cost) + '</span></div>'
+      + '<div class="rec-time">' + C.escapeHtml(C.formatTime(record.ts)) + '</div>'
       + '</article>';
   }
 
-  function updateCardHtml(summary, currentVersion) {
-    var line = summary.available && summary.latest
-      ? '发现新版本 ' + C.escapeHtml(summary.latest)
-        + (summary.latestCode ? ' (' + C.escapeHtml(summary.latestCode) + ')' : '')
-      : summary.statusText || ('当前 ' + (currentVersion || '—') + '，已是最新');
-    if (!summary.available && !summary.hasPackage) {
-      // 无新版时不占一张卡，只留一行字 + 检查更新。
-      return '<p class="home-update-quiet">' + line
-        + ' <button class="home-link" data-action="check-update"'
-        + (summary.checking || summary.downloading ? ' disabled' : '') + '>'
-        + (summary.checking ? '检查中…' : summary.downloading ? '下载中…' : '检查更新')
-        + '</button></p>';
+  /** 底部一行状态：写成一句小字，不占板块。 */
+  function statusLine(hasKey, modelLabel, captureOn, update, currentVersion) {
+    var parts = [];
+    parts.push(hasKey ? '模型 ' + modelLabel + ' 已就绪' : '还没配模型');
+    parts.push(captureOn ? '划词已开' : '划词未开');
+    if (update && update.available && update.latest) {
+      parts.push('发现新版本 ' + update.latest);
+    } else if (currentVersion) {
+      parts.push('当前 ' + currentVersion + ' 已是最新');
     }
-    var action = '';
-    if (summary.hasPackage) {
-      action = '<button class="btn primary" data-action="install-update">安装更新</button>';
-    } else if (summary.available) {
-      action = '<button class="btn primary" data-action="download-update">下载并安装</button>';
-    } else {
-      action = '<button class="btn" data-action="check-update"'
-        + (summary.checking || summary.downloading ? ' disabled' : '') + '>'
-        + (summary.checking ? '检查中…' : summary.downloading ? '下载中…' : '检查更新')
-        + '</button>';
-    }
-    return '<section class="home-panel home-update"><h2>更新</h2>'
-      + '<p class="home-line">当前版本 <b>' + C.escapeHtml(currentVersion || '—') + '</b></p>'
-      + '<p class="home-line">' + line + '</p>'
-      + '<div class="row">' + action
-      + '<button class="btn ghost small" data-action="manual-update">手动下载</button></div>'
-      + '</section>';
+    return parts.join('，') + '。';
   }
 
   function render() {
@@ -130,7 +111,6 @@
     } catch (ignored) {
     }
     var history = C.getHistory();
-    var usage = summarizeUsage(C.getUsage(), now.getTime());
     var update = window.ZJUpdate ? window.ZJUpdate.summary() : null;
     var currentVersion = '';
     try {
@@ -138,59 +118,47 @@
     } catch (ignored) {
     }
 
-    var modelLine = hasKey
-      ? C.escapeHtml(provider.name) + ' · ' + C.escapeHtml(C.modelLabel(model, provider.id))
-      : '还没配 Key，先去设置里选模型、粘贴 Key';
-    var modelAction = hasKey
-      ? '<button class="btn ghost small" data-action="goto-model">换模型</button>'
-      : '<button class="btn primary" data-action="goto-model">去配模型</button>';
-
     var hasReading = !!(history && history[0] && (history[0].text || history[0].question));
-    var recent = history.slice(0, 5);
+    var recent = history.slice(0, 3);
     var recentHtml = recent.length
-      ? '<div class="home-rec-list">' + recent.map(recentCard).join('') + '</div>'
-      : '<div class="home-empty">还没有注解。去「阅读」粘贴一段文字，选中后点「注解」，'
-        + '第一条就会出现在这里。<div class="row" style="margin-top:14px">'
-        + '<button class="btn primary" data-action="start-read">开始阅读</button></div></div>';
+      ? '<section class="home-recent"><div class="home-section-head"><h2>最近注解</h2>'
+        + '<button class="home-link" data-action="goto-records">看全部记录</button></div>'
+        + '<div class="home-rec-list">' + recent.map(recentCard).join('') + '</div></section>'
+      : '';
 
+    var footAction = '';
+    if (update && update.hasPackage) {
+      footAction = '<button class="home-link" data-action="install-update">安装更新</button>';
+    } else if (update && update.available) {
+      footAction = '<button class="home-link" data-action="download-update">下载并安装</button>';
+    } else {
+      footAction = '<button class="home-link" data-action="check-update"'
+        + (update && (update.checking || update.downloading) ? ' disabled' : '') + '>'
+        + (update && update.checking ? '检查中…' : update && update.downloading ? '下载中…' : '检查更新')
+        + '</button>';
+    }
+    var footSetup = hasKey
+      ? ''
+      : '<button class="home-link" data-action="goto-model">去设置</button>';
+
+    var footLinks = [footSetup, footAction].filter(function (s) { return s; }).join(' ');
     body.innerHTML = '<div class="home-hero">'
       + '<p class="home-date">' + (now.getMonth() + 1) + '月' + now.getDate() + '日 '
       + weekdayName(now.getDay()) + '</p>'
       + '<h1>' + greeting(now.getHours()) + '</h1>'
       + (hasReading
         ? '<p class="home-reading">' + C.escapeHtml(dailyLine(history)) + '</p>'
-        : '<p class="home-lede">' + C.escapeHtml(dailyLine(history)) + '</p>')
+        : '<p class="home-lede">还没有注解。去「阅读」粘贴一段文字，选中后点「注解」，'
+          + '第一条就会出现在这里。</p>')
       + '</div>'
       + '<div class="home-actions">'
-      + '<button class="home-primary" data-action="start-read"><b>开始阅读</b><span>粘贴文字，选中注解</span></button>'
-      + '<button class="home-status-row" data-action="goto-capture"><span class="home-dot' + (captureOn ? ' on' : '') + '"></span><span class="home-status-text"><b>划词 ' + (captureOn ? '已开' : '未开') + '</b><span>'
-      + (captureOn ? '在其他应用里选中就有「注 / 问」' : '点我去设置里开启悬浮取词') + '</span></span></button>'
-      + '<button class="home-status-row" data-action="goto-model"><span class="home-dot' + (hasKey ? ' on' : '') + '"></span><span class="home-status-text"><b>' + (hasKey ? '模型已就绪' : '去配模型') + '</b><span>'
-      + C.escapeHtml(hasKey ? C.modelLabel(model, provider.id) : '选模型、粘贴 Key') + '</span></span></button>'
+      + '<button class="home-primary" data-action="start-read">开始阅读</button>'
       + '</div>'
-      + '<div class="home-grid">'
-      + '<section class="home-recent"><div class="home-section-head"><h2>最近注解</h2>'
-      + '<button class="home-link" data-action="goto-records">看全部记录</button></div>'
-      + recentHtml + '</section>'
-      + '<div class="home-side">'
-      + '<section class="home-panel"><h2>模型</h2>'
-      + '<p class="home-line">' + modelLine + '</p>'
-      + '<p class="home-line muted">云端模型 · Key 只存本机，不会明文显示</p>'
-      + '<div class="row">' + modelAction + '</div>'
-      + '<div class="home-divider"></div>'
-      + '<h2>用量</h2>'
-      + '<div class="stats home-stats">'
-      + '<div class="stat"><b>' + usage.todayRequests + '</b><span>今天请求</span></div>'
-      + '<div class="stat"><b>' + C.formatTokens(usage.todayTokens) + '</b><span>今天 tokens</span></div>'
-      + '<div class="stat"><b>' + C.formatTokens(usage.totalTokens) + '</b><span>累计 tokens</span></div>'
-      + '<div class="stat"><b>' + C.formatCost(usage.totalCost) + '</b><span>累计估算花费</span></div>'
-      + '</div>'
-      + (usage.totalRequests
-          ? '<div class="row"><button class="btn ghost small" data-action="goto-usage">看用量明细</button></div>'
-          : '<p class="home-line muted">回答一次后，这里会统计 token 和估算花费。</p>')
-      + '</section>'
-      + (update ? updateCardHtml(update, currentVersion) : '')
-      + '</div></div>';
+      + recentHtml
+      + '<p class="home-foot">'
+      + C.escapeHtml(statusLine(hasKey, C.modelLabel(model, provider.id), captureOn, update, currentVersion))
+      + (footLinks ? ' ' + footLinks : '')
+      + '</p>';
   }
 
   function bind() {
@@ -224,13 +192,8 @@
       } else if (action === 'goto-model') {
         ui.switchTab('settings');
         ui.showSettingsGroup('model');
-      } else if (action === 'goto-capture') {
-        ui.switchTab('settings');
-        ui.showSettingsGroup('capture');
       } else if (action === 'goto-records') {
         ui.switchTab('records');
-      } else if (action === 'goto-usage') {
-        ui.showUsage();
       } else if (action === 'check-update' && window.ZJUpdate) {
         window.ZJUpdate.check(false);
         render();
@@ -242,8 +205,6 @@
         if (summary.hasPackage && window.ZJUpdate.state.uri) {
           window.ZJUpdate.install(window.ZJUpdate.state.uri);
         }
-      } else if (action === 'manual-update' && window.ZJUpdate) {
-        C.invoke('openUrl', window.ZJUpdate.manualUrl());
       }
     });
   }

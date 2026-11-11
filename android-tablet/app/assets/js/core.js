@@ -419,7 +419,10 @@
       + ((usage.completionTokens || 0) / 1000000) * price.out;
   }
 
-  function record(mode, text, question, answer, usage, latency, contextChars, error) {
+  // turns：本轮之前的问答串（每项 {question, answer}）。传了就随记录
+  // 一起存，历史详情里能看到完整追问串；不传/空串时不写该字段，
+  // 老记录保持原样。
+  function record(mode, text, question, answer, usage, latency, contextChars, error, turns) {
     var settings = getSettings();
     var provider = getProvider(settings);
     var model = modelOf(settings);
@@ -443,6 +446,9 @@
       ok: !error,
       error: error || ''
     };
+    if (turns && turns.length) {
+      rec.turns = turns;
+    }
     invoke('addHistory', JSON.stringify(rec));
     if (!error) invoke('addUsage', JSON.stringify(rec));
     return rec;

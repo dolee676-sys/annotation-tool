@@ -14,9 +14,131 @@
     rec: null,
     favorited: false,
     pinned: false,
+    // 本轮回答有没有已经存过历史。finish() 存完置 true；pagehide 补记
+    // 时靠它保证只存一次（见 savePendingTurn）。
+    recorded: false,
     settings: C.getSettings()
   };
   var renderPending = false;
+  var selTimer = null;
+
+  /**
+   * 复制统一出口：先走原生 bridge（同步返回 "true"/"false"，见
+   * OverlayBridge.copy），失败或浏览器预览时再试 navigator.clipboard，
+   * 两路都失败才报失败——原来不管成败都 toast“已复制。”。
+   */
+  function copyText(text) {
+    if (!text) {
+      C.invoke('toast', '没有可复制的内容。');
+      return;
+    }
+    var result = null;
+    try {
+      result = C.invoke('copy', text);
+    } catch (exception) {
+      result = null;
+    }
+    if (result === 'true' || result === true) {
+      C.invoke('toast', '已复制。');
+      return;
+    }
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard
+        && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          C.invoke('toast', '已复制。');
+        }, function () {
+          C.invoke('toast', '复制失败，请长按选择复制。');
+        });
+        return;
+      }
+    } catch (exception) {
+    }
+    C.invoke('toast', '复制失败，请长按选择复制。');
+  }
+
+  /** 取 #answer / #quote 里的当前选区文本；没选区或选区不在答案区返回 ''。 */
+  function selectedTextInAnswer() {
+    try {
+      var selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return '';
+      var node = selection.anchorNode;
+      while (node) {
+        if (node === $('#answer') || node === $('#quote')) return selection.toString();
+        node = node.parentNode;
+      }
+      return '';
+    } catch (exception) {
+      return '';
+    }
+  }
+
+  /** 本轮为止的完整问答串：之前的 turns + 当前这一问一答。 */
+  function threadTurns() {
+    var thread = state.turns.slice();
+    if (state.question || state.answer) {
+      thread.push({ question: state.question, answer: state.answer });
+    }
+    return thread;
+  }
+
+  /**
+   * 面板关闭/页面卸载时补记还没存的轮次：流式没跑完就关面板时 finish()
+   * 走不到（或回调落进重载后的新页面被丢掉），这一问就丢了。用
+   * state.recorded 保证 finish() 存过的不会重复记。
+   */
+  function savePendingTurn() {
+    if (state.recorded || !state.answer) return;
+    var mode = state.mode === 'ask' || state.question ? 'ask' : 'annotate';
+    state.rec = C.record(mode, state.text, state.question, state.answer, null,
+      Date.now() - state.started, 0, null, threadTurns());
+    state.recorded = true;
+  }
+
+  /** 选区变化后 120ms 再看：有选区就亮「复制所选」气泡并告诉原生不要关面板。 */
+  function onSelectionChange() {
+    if (selTimer) clearTimeout(selTimer);
+    selTimer = setTimeout(updateSelCopy, 120);
+  }
+
+  function updateSelCopy() {
+    var chip = $('#selCopy');
+    if (!chip) return;
+    var text = selectedTextInAnswer();
+    var selection = null;
+    try {
+      selection = window.getSelection();
+    } catch (exception) {
+      selection = null;
+    }
+    if (!text || !selection || selection.rangeCount === 0) {
+      chip.hidden = true;
+      try {
+        C.invoke('setSelectionActive', false);
+      } catch (exception) {
+      }
+      return;
+    }
+    try {
+      C.invoke('setSelectionActive', true);
+    } catch (exception) {
+    }
+    var rect = null;
+    try {
+      rect = selection.getRangeAt(0).getBoundingClientRect();
+    } catch (exception) {
+      rect = null;
+    }
+    if (rect) {
+      var vw = window.innerWidth || 400;
+      var vh = window.innerHeight || 600;
+      var x = Math.max(8, Math.min(rect.left, vw - 96));
+      var y = Math.min(vh - 56, rect.bottom + 8);
+      chip.style.left = Math.round(x) + 'px';
+      chip.style.top = Math.round(y) + 'px';
+    }
+    chip.hidden = false;
+  }
 
   function init() {
     var initData = {};
@@ -86,6 +208,7 @@
     state.started = Date.now();
     state.streaming = true;
     state.rec = null;
+    state.recorded = false;
     $('#answer').innerHTML = '';
     $('#empty').hidden = true;
     $('#error').hidden = true;
@@ -148,21 +271,25 @@
     var elapsed = Date.now() - state.started;
 
     if (error) {
-      var failed = C.record(state.mode === 'ask' || state.question ? 'ask' : 'annotate',
-        state.text, state.question, state.answer, null, elapsed, 0, error);
-      state.rec = failed;
+      if (!state.recorded) {
+        state.rec = C.record(state.mode === 'ask' || state.question ? 'ask' : 'annotate',
+          state.text, state.question, state.answer, null, elapsed, 0, error, threadTurns());
+        state.recorded = true;
+      }
       renderAnswer();
       showError(error);
       $('#usage').textContent = '请求失败';
       return;
     }
 
-    var record = C.record(state.mode === 'ask' || state.question ? 'ask' : 'annotate',
-      state.text, state.question, state.answer, usage, elapsed, 0, null);
-    state.rec = record;
+    if (!state.recorded) {
+      state.rec = C.record(state.mode === 'ask' || state.question ? 'ask' : 'annotate',
+        state.text, state.question, state.answer, usage, elapsed, 0, null, threadTurns());
+      state.recorded = true;
+    }
     renderAnswer();
-    $('#usage').textContent = C.formatTokens(record.totalTokens) + ' tokens · '
-      + C.formatCost(record.cost) + (usage && usage.estimated ? ' 估算' : '');
+    $('#usage').textContent = C.formatTokens(state.rec.totalTokens) + ' tokens · '
+      + C.formatCost(state.rec.cost) + (usage && usage.estimated ? ' 估算' : '');
     $('#input').placeholder = '继续追问…';
   }
 
@@ -222,8 +349,67 @@
         C.invoke('toast', '还没有答案。');
         return;
       }
-      C.invoke('copy', state.answer);
-      C.invoke('toast', '已复制。');
+      copyText(state.answer);
+    });
+    $('#selCopy').addEventListener('click', function () {
+      var text = selectedTextInAnswer();
+      if (text) copyText(text);
+      try {
+        window.getSelection().removeAllRanges();
+      } catch (exception) {
+      }
+      $('#selCopy').hidden = true;
+      try {
+        C.invoke('setSelectionActive', false);
+      } catch (exception) {
+      }
+    });
+    document.addEventListener('selectionchange', onSelectionChange);
+    window.addEventListener('pagehide', savePendingTurn);
+    /**
+     * 实体键盘复制：悬浮窗里的 WebView 原生 Ctrl+C 依赖窗口焦点和系统
+     * 选词 ActionMode，在 TYPE_ACCESSIBILITY_OVERLAY 窗口里并不可靠
+     * （面板常拿不到焦点，选词条也可能弹不出）。这里直接在 JS 里接管：
+     * 有选区拷选区，没选区拷整段答案；Ctrl+A 全选答案。
+     * 焦点在输入框里时不拦截，让输入框自己的复制/全选正常走。
+     * Shift+方向键不需要 JS，WebView 有焦点后原生就支持（焦点由
+     * OverlayPanel.show() 里的 requestFocus() 保证，答案区加了
+     * tabindex="0" 才能落键盘焦点）。
+     */
+    document.addEventListener('keydown', function (event) {
+      var target = event.target;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
+        || target.isContentEditable)) return;
+      if (event.isComposing || event.keyCode === 229) return;
+      if (!event.ctrlKey && !event.metaKey) return;
+      var key = (event.key || '').toLowerCase();
+      if (key === 'c' || event.keyCode === 67) {
+        var selected = selectedTextInAnswer();
+        if (selected) {
+          event.preventDefault();
+          copyText(selected);
+          return;
+        }
+        if (state.answer) {
+          event.preventDefault();
+          copyText(state.answer);
+        }
+        return;
+      }
+      if (key === 'a' || event.keyCode === 65) {
+        var answerEl = $('#answer');
+        if (answerEl && state.answer) {
+          event.preventDefault();
+          try {
+            var selection = window.getSelection();
+            selection.removeAllRanges();
+            var range = document.createRange();
+            range.selectNodeContents(answerEl);
+            selection.addRange(range);
+          } catch (exception) {
+          }
+        }
+      }
     });
     $('#favorite').addEventListener('click', function () {
       if (!state.rec || !state.answer) {
