@@ -55,7 +55,7 @@ public class ScreenshotOcr {
      * 了划拉不出截图框、气泡还消失了”。4 秒没回就当失败，toast + 恢
      * 复气泡，让他能马上重划。代数用来防旧回调/旧超时串到新一次划选。
      */
-    private static final long SCREENSHOT_TIMEOUT_MS = 4000;
+    private static final long SCREENSHOT_TIMEOUT_MS = 8000;
     private long screenshotGeneration;
     private Runnable screenshotTimeoutRunnable;
     /** 刚点划、正在等截屏回调：气泡看门狗这段时间别把气泡找回来闪一下。 */

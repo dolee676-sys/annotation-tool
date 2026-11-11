@@ -45,19 +45,11 @@ public class OverlayPanel {
      */
     private volatile boolean selectionActive;
     /**
-     * 面板代数：每次 show() +1。close() 里解绑 bridge 改为延后执行
-     * （见 close() 注释），代数用来判断延后任务跑起来时是不是已经有
-     * 新面板复用了同一个 WebView——是就不动新 bridge。
+     * 面板代数：每次 show() +1。close() 里解绑 bridge 延后到主线程下一轮，
+     * 先让 cancelOwner 已 post 的 __aiDone 跑完（finish→record 存历史），
+     * 再解绑并销毁 WebView，避免追问历史丢失。
      */
     private int panelGeneration;
-    /**
-     * 复用的面板 WebView：原来每次打开都 new WebView + 加载页面、关闭就
-     * destroy，下次打开又要重付 WebView 创建 + 页面解析的固定开销，
-     * 点「注」到面板出来要等一截。现在关面板时只 detach、不销毁，
-     * 下次打开复用它，只 reload 一次页面（reload 会重跑 JS 初始化，
-     * 旧回答、旧状态不会漏到新面板里）。服务销毁时由 destroy() 真销毁。
-     */
-    private WebView cachedWeb;
 
     public OverlayPanel(AccessibilityService service, Handler handler,
                         WindowManager windowManager, Host host) {
@@ -118,11 +110,9 @@ public class OverlayPanel {
         y = Math.max(UiUtil.dp(service, 40), Math.min(y, screenHeight - cardHeight - UiUtil.dp(service, 24)));
 
         panelPinned = false;
-        panelWeb = cachedWeb;
-        cachedWeb = null;
-        if (panelWeb == null) {
-            panelWeb = new WebView(service);
-        }
+        // 每次打开都用全新 WebView（0.1.38 稳定生命周期）。复用同一 WebView
+        // reload 在部分机型上会让「点注」后面板不显示/闪退，这里不复用。
+        panelWeb = new WebView(service);
         WebSettings settings = panelWeb.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -234,16 +224,6 @@ public class OverlayPanel {
         } catch (Exception exception) {
             close();
         }
-        // 键盘焦点：原来面板打开后 WebView 从没主动要过焦点，实体键盘
-        // 的按键进不到面板里——Shift+方向键选不了文字、Ctrl+C 也没选区
-        // 可拷。窗口本身是可聚焦的（没加 FLAG_NOT_FOCUSABLE），这里让
-        // WebView 打开就拿焦点，硬件键盘事件才能走 WebView 的原生处理。
-        try {
-            panelWeb.setFocusable(true);
-            panelWeb.setFocusableInTouchMode(true);
-            panelWeb.requestFocus();
-        } catch (Exception ignored) {
-        }
     }
 
     public void close() {
@@ -269,51 +249,35 @@ public class OverlayPanel {
         }
         if (web != null) {
             // 关键次序：cancelOwner 只是把 __aiDone 回调 post 到主线程，
-            // 它跑起来才会调 finish() → C.record() 存历史。原来这里同
-            // 步就 removeJavascriptInterface，等 __aiDone 落下来时
-            // window.AndroidBridge 已经没了，record() 掉进浏览器预览用
-            // 的 Mock、写进面板 WebView 自己的 localStorage，主界面
-            // （读 SharedPreferences）永远看不到——点外部关面板时
-            // 流式没跑完的追问就是这么丢的（点右上角 × 反而能存，因
-            // 为 JS 里先 C.cancel、回调先排队）。所以解绑延后到主线
-            // 程下一轮、且排在已 post 的 __aiDone 之后；代数 guard 保
-            // 证这期间若 show() 复用了同一个 WebView，不会误删新 bridge。
+            // 它跑起来才会调 finish() → C.record() 存历史。这里同步
+            // removeJavascriptInterface 会让 record() 时 bridge 已摘、历史丢失。
+            // 所以解绑+销毁都延后到主线程下一轮，排在已 post 的 __aiDone 之后。
             final WebView closingWeb = web;
-            final int closingGeneration = panelGeneration;
             try {
                 new Handler(Looper.getMainLooper()).post(() -> {
-                    if (closingGeneration != panelGeneration) {
-                        return;
-                    }
                     try {
                         closingWeb.removeJavascriptInterface("AndroidBridge");
+                    } catch (Exception ignored) {
+                    }
+                    try {
+                        closingWeb.stopLoading();
+                    } catch (Exception ignored) {
+                    }
+                    try {
+                        closingWeb.destroy();
                     } catch (Exception ignored) {
                     }
                 });
                 web.stopLoading();
             } catch (Exception ignored) {
             }
-            // 只 detach、不 destroy：留给下次 show() 复用。
-            // 旧 bridge 已解绑，下次 show 会绑新的（新文字/新模式），
-            // 再 loadUrl 一次，JS 状态是全新的。
-            cachedWeb = web;
         }
         host.restoreCaptureBubble();
     }
 
-    /** 服务销毁时调用：真正销毁复用的 WebView，释放渲染进程。 */
+    /** 服务销毁时调用。 */
     public void destroy() {
         close();
-        WebView cached = cachedWeb;
-        cachedWeb = null;
-        if (cached != null) {
-            try {
-                cached.removeJavascriptInterface("AndroidBridge");
-                cached.stopLoading();
-                cached.destroy();
-            } catch (Exception ignored) {
-            }
-        }
     }
 
     public void move(int dx, int dy) {
