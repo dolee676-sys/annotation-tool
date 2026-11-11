@@ -1,0 +1,104 @@
+html, body { background: transparent; height: 100%; margin: 0; overflow: hidden; }
+.cap { height: 100%; padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px)); }
+.cap-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 26px 60px rgba(30, 24, 18, 0.28);
+  overflow: hidden;
+}
+.cap-head { padding: 12px 14px 11px; gap: 8px; }
+.cap-head .pane-title { min-width: 0; flex: 1; }
+.cap-head .pane-title b,
+.cap-head .pane-title small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cap-head .model-chip {
+  flex: none;
+  max-width: 26%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cap-head .mult-badge { flex: none; }
+.cap-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1.05fr 0.95fr;
+  transition: grid-template-rows 180ms ease;
+}
+.cap.has-answer .cap-body { grid-template-rows: 0.55fr 1.45fr; }
+.cap-doc-wrap {
+  overflow: auto;
+  padding: 12px 15px;
+  border-bottom: 1px solid var(--line);
+}
+.cap-doc {
+  font-family: var(--serif);
+  font-size: 14px;
+  line-height: 1.9;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+  color: rgba(34, 31, 26, 0.9);
+  cursor: text;
+}
+.cap-para {
+  margin: 0 0 9px;
+  white-space: pre-wrap;
+}
+.cap-para:last-child { margin-bottom: 0; }
+.cap-doc::selection { background: rgba(154, 75, 22, 0.22); }
+.cap-answer {
+  overflow: auto;
+  padding: 12px 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cap-empty {
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--muted);
+  padding: 12px 0;
+}
+.cap-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+}
+.cap-status {
+  font-size: 9.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.cap-composer {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 6px;
+}
+.cap-composer input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: #fff;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  outline: none;
+}
+.cap-composer input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
