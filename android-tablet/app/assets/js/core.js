@@ -422,12 +422,12 @@
   // turns：本轮之前的问答串（每项 {question, answer}）。传了就随记录
   // 一起存，历史详情里能看到完整追问串；不传/空串时不写该字段，
   // 老记录保持原样。
-  function record(mode, text, question, answer, usage, latency, contextChars, error, turns) {
+  function record(mode, text, question, answer, usage, latency, contextChars, error, turns, historyId) {
     var settings = getSettings();
     var provider = getProvider(settings);
     var model = modelOf(settings);
     var rec = {
-      id: uid('h'),
+      id: historyId || uid('h'),
       ts: Date.now(),
       mode: mode,
       programName: '平板',
@@ -449,7 +449,10 @@
     if (turns && turns.length) {
       rec.turns = turns;
     }
-    invoke('addHistory', JSON.stringify(rec));
+    // 同一段的一次面板会话只占一条历史：首次 addHistory，追问按 id 原地更新，
+    // 这样「那条注解」里能看到我追问过的问题，而不是拆成好几条。
+    if (historyId) invoke('updateHistory', JSON.stringify(rec));
+    else invoke('addHistory', JSON.stringify(rec));
     if (!error) invoke('addUsage', JSON.stringify(rec));
     return rec;
   }

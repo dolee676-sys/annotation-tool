@@ -18,6 +18,8 @@
     answer: '',
     started: 0,
     rec: null,
+    // 本次面板会话对应的历史记录 id：首次 create，追问按 id 原地更新。
+    historyId: null,
     // 本轮回答有没有已经存过历史（见 panel.js 同名字段注释）。
     recorded: false
   };
@@ -87,7 +89,8 @@
     if (state.recorded || !state.answer) return;
     var mode = state.question ? 'ask' : state.mode;
     state.rec = C.record(mode, state.currentText, state.question, state.answer, null,
-      Date.now() - state.started, state.context.length, null, threadTurns());
+      Date.now() - state.started, state.context.length, null, threadTurns(), state.historyId);
+    state.historyId = state.rec.id;
     state.recorded = true;
   }
 
@@ -588,7 +591,8 @@
     if (error) {
       if (!state.recorded) {
         state.rec = C.record(mode, state.currentText, state.question, state.answer,
-          null, elapsed, state.context.length, error, threadTurns());
+          null, elapsed, state.context.length, error, threadTurns(), state.historyId);
+        state.historyId = state.rec.id;
         state.recorded = true;
       }
       renderAnswer();
@@ -598,7 +602,8 @@
     }
     if (!state.recorded) {
       state.rec = C.record(mode, state.currentText, state.question, state.answer,
-        usage, elapsed, state.context.length, null, threadTurns());
+        usage, elapsed, state.context.length, null, threadTurns(), state.historyId);
+      state.historyId = state.rec.id;
       state.recorded = true;
     }
     renderAnswer();

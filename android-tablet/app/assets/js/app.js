@@ -167,7 +167,7 @@
     });
     hideToolbar();
     if (tab === 'home') window.ZJHome.render();
-    if (tab === 'records') renderRecords();
+    if (tab === 'records') requestAnimationFrame(renderRecords);
     if (tab === 'settings') renderSettings();
   }
 

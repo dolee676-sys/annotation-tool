@@ -14,6 +14,9 @@
     rec: null,
     favorited: false,
     pinned: false,
+    // 本次面板会话对应的历史记录 id：首次 create，追问按 id 原地更新，
+    // 让一条注解里能看到我追问过的所有问题。
+    historyId: null,
     // 本轮回答有没有已经存过历史。finish() 存完置 true；pagehide 补记
     // 时靠它保证只存一次（见 savePendingTurn）。
     recorded: false,
@@ -91,7 +94,8 @@
     if (state.recorded || !state.answer) return;
     var mode = state.mode === 'ask' || state.question ? 'ask' : 'annotate';
     state.rec = C.record(mode, state.text, state.question, state.answer, null,
-      Date.now() - state.started, 0, null, threadTurns());
+      Date.now() - state.started, 0, null, threadTurns(), state.historyId);
+    state.historyId = state.rec.id;
     state.recorded = true;
   }
 
@@ -273,7 +277,8 @@
     if (error) {
       if (!state.recorded) {
         state.rec = C.record(state.mode === 'ask' || state.question ? 'ask' : 'annotate',
-          state.text, state.question, state.answer, null, elapsed, 0, error, threadTurns());
+          state.text, state.question, state.answer, null, elapsed, 0, error, threadTurns(), state.historyId);
+        state.historyId = state.rec.id;
         state.recorded = true;
       }
       renderAnswer();
@@ -284,7 +289,8 @@
 
     if (!state.recorded) {
       state.rec = C.record(state.mode === 'ask' || state.question ? 'ask' : 'annotate',
-        state.text, state.question, state.answer, usage, elapsed, 0, null, threadTurns());
+        state.text, state.question, state.answer, usage, elapsed, 0, null, threadTurns(), state.historyId);
+      state.historyId = state.rec.id;
       state.recorded = true;
     }
     renderAnswer();

@@ -63,6 +63,11 @@ public class Bridge {
     }
 
     @JavascriptInterface
+    public void updateHistory(String json) {
+        Store.updateRecord(activity, "history", json);
+    }
+
+    @JavascriptInterface
     public String getFavorites() {
         return Store.array(activity, "favorites").toString();
     }

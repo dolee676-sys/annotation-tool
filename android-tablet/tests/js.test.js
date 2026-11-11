@@ -528,7 +528,7 @@ assert.equal(env.getEl('#selCopy').hidden, true, '选区清空应收起气泡');
 assert.ok(env.invokeCalls.some((c) => c[0] === 'setSelectionActive' && c[1] === false));
 });
 
-test('panel：多轮追问各存一条且含完整 turns', async () => {
+test('panel：多轮追问合并成一条且含完整 turns', async () => {
 const env = loadPanel();
 await sleep(1600);
 assert.equal(historyOf(env).length, 1);
@@ -539,13 +539,11 @@ env.getEl('#input').value = '有什么办法减少注意力残留？';
 env.getEl('#send').listeners.click();
 await sleep(1800);
 const list = historyOf(env);
-assert.equal(list.length, 3, '首次注解 + 两次追问应各存一条');
+assert.equal(list.length, 1, '一次面板会话应合并为一条记录（追问并进那条注解）');
 assert.equal(list[0].question, '有什么办法减少注意力残留？');
-assert.equal(list[0].turns.length, 3, '最新记录应带完整三轮 turns');
+assert.equal(list[0].turns.length, 3, '同一条记录应累计三轮 turns');
 assert.deepEqual(list[0].turns.map((t) => t.question),
 ['', '那和走神有什么区别？', '有什么办法减少注意力残留？']);
-assert.equal(list[1].turns.length, 2);
-assert.equal(list[2].turns.length, 1);
 });
 
 test('panel：pagehide 补记未存轮次，流式回来不重复记', async () => {

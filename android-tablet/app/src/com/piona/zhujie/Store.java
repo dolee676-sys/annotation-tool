@@ -198,6 +198,29 @@ public final class Store {
         }
     }
 
+    public static synchronized void updateRecord(Context context, String key, String json) {
+        try {
+            JSONObject item = new JSONObject(json);
+            String id = item.optString("id");
+            JSONArray current = array(context, key);
+            JSONArray next = new JSONArray();
+            boolean replaced = false;
+            for (int i = 0; i < current.length(); i++) {
+                JSONObject existing = current.optJSONObject(i);
+                if (existing != null && id.equals(existing.optString("id"))) {
+                    next.put(item);
+                    replaced = true;
+                } else {
+                    next.put(current.get(i));
+                }
+            }
+            if (replaced) {
+                putSync(context, key, next.toString());
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
     public static synchronized void clearRecords(Context context) {
         put(context, "history", "[]");
         put(context, "favorites", "[]");
