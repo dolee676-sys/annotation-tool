@@ -31,9 +31,9 @@
         <button class="icon-btn" id="close" aria-label="关闭">×</button>
       </div>
       <div class="panel-scroll" id="scroll">
-        <div class="quote" id="quote"></div>
+        <div class="quote" id="quote" tabindex="0"></div>
         <div class="pane-meta" id="meta"></div>
-        <div class="md" id="answer"></div>
+        <div class="md" id="answer" tabindex="0"></div>
         <div class="panel-empty" id="empty">选中文字已带上，直接问你想知道的。</div>
         <div class="pane-error" id="error" role="alert" hidden></div>
         <div class="setup" id="setup" hidden>
@@ -52,6 +52,7 @@
         <button class="btn primary small" id="send">发送</button>
       </div>
     </div>
+    <button class="sel-copy" id="selCopy" hidden>复制所选</button>
   </div>
 
   <script src="js/marked.min.js"></script>

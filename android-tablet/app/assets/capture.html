@@ -25,9 +25,9 @@
         </div>
         <aside class="cap-answer" id="answerPane">
           <div class="cap-empty" id="empty">直接点上面的词，或拖选一段，再点「注解 / 提问」。</div>
-          <div class="quote" id="quote" hidden></div>
+          <div class="quote" id="quote" tabindex="0" hidden></div>
           <div class="pane-meta" id="meta"></div>
-          <div class="md" id="answer"></div>
+          <div class="md" id="answer" tabindex="0"></div>
           <div class="pane-error" id="error" role="alert" hidden></div>
         </aside>
       </div>
@@ -46,6 +46,7 @@
     <button data-mode="annotate">注解</button>
     <button data-mode="ask">提问</button>
   </div>
+  <button class="sel-copy" id="selCopy" hidden>复制所选</button>
 
   <script src="js/marked.min.js"></script>
   <script src="js/purify.min.js"></script>
