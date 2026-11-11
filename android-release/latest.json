@@ -1,8 +1,8 @@
 {
-  "versionCode": 1020,
-  "versionName": "0.1.42",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.42.apk",
-  "sha256": "d21519b91f4e1057d10c0d034a0603f0e2c4a87f8dbdbaf95f767d7741bb8b3a",
+  "versionCode": 1021,
+  "versionName": "0.1.43",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.43.apk",
+  "sha256": "9b5c9a93ebdca5c26b8780b799be343009f7e263cb8e99f81b2ed2b0c55c8acf",
   "size": 268299,
-  "notes": "修复：三引号被误当回答对象（提示词改用边界标记）；追问合并进同一条注解并带完整问答串；历史记录首屏空白。"
+  "notes": "首页改宽屏两栏（问候/开始阅读/统计 + 最近注解卡片）；钉住面板不再抢键盘焦点（OneNote 能正常回车）；复制请用面板内「复制」按钮。"
 }
