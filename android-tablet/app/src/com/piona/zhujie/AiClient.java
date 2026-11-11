@@ -6,7 +6,6 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -252,61 +251,14 @@ public final class AiClient {
 
     /**
      * S-02：公网必须 HTTPS；HTTP 仅允许本机/私有网段，避免 Key 与截图明文外传。
-     * 返回 null 表示安全，否则返回提示文案。
+     * 实现已抽到 UrlSafety（可单测），这里只保留调用点，行为不变。
      */
     public static String baseUrlError(String base) {
-        if (base == null) {
-            return "接口地址为空。";
-        }
-        String b = base.trim().toLowerCase(Locale.ROOT);
-        if (b.startsWith("https://")) {
-            return null;
-        }
-        if (!b.startsWith("http://")) {
-            return "接口地址必须以 http:// 或 https:// 开头。";
-        }
-        String host = b.substring(7);
-        int slash = host.indexOf('/');
-        if (slash >= 0) host = host.substring(0, slash);
-        int colon = host.indexOf(':');
-        if (colon >= 0) host = host.substring(0, colon);
-        if (host.equals("localhost") || host.equals("127.0.0.1")
-                || host.equals("::1") || host.equals("[::1]")) {
-            return null;
-        }
-        if (host.startsWith("10.") || host.startsWith("192.168.")) {
-            return null;
-        }
-        if (host.startsWith("172.")) {
-            String[] parts = host.split("\\.");
-            if (parts.length == 4) {
-                try {
-                    int second = Integer.parseInt(parts[1]);
-                    if (second >= 16 && second <= 31) return null;
-                } catch (Exception ignored) {
-                }
-            }
-        }
-        return "自定义接口是 HTTP 明文，仅允许本机/局域网地址；公网请改用 HTTPS，否则 Key 与内容会明文传输。";
+        return UrlSafety.baseUrlError(base);
     }
 
     private static String readAll(InputStream stream) {
-        if (stream == null) {
-            return "";
-        }
-        try (InputStream input = stream;
-             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[4096];
-            int read;
-            int total = 0;
-            while ((read = input.read(buffer)) > 0 && total < 8_000) {
-                output.write(buffer, 0, read);
-                total += read;
-            }
-            return output.toString("UTF-8");
-        } catch (Exception ignored) {
-            return "";
-        }
+        return HttpSupport.readAll(stream, 8_000);
     }
 
     private static String extractError(String raw, int status) {
@@ -337,13 +289,14 @@ public final class AiClient {
         if (value.isEmpty()) {
             return "请求失败，请检查网络和 Key。";
         }
-        String lower = value.toLowerCase();
-        if (lower.contains("unable to resolve host") || lower.contains("unknownhost")) {
+        String hint = HttpSupport.networkHint(value);
+        if ("HOST".equals(hint)) {
             return "网络不可用，或模型地址无法解析。";
         }
-        if (lower.contains("timeout") || lower.contains("timed out")) {
+        if ("TIMEOUT".equals(hint)) {
             return "请求超时，请稍后再试。";
         }
+        String lower = value.toLowerCase();
         if (lower.contains("401")
                 || lower.contains("unauthorized")
                 || lower.contains("invalid api key")
@@ -369,19 +322,7 @@ public final class AiClient {
     }
 
     private static int estimate(String text) {
-        int cjk = 0;
-        int other = 0;
-        for (int i = 0; i < text.length(); i++) {
-            char ch = text.charAt(i);
-            if ((ch >= 0x3400 && ch <= 0x9FFF)
-                    || (ch >= 0x3040 && ch <= 0x30FF)
-                    || (ch >= 0xAC00 && ch <= 0xD7AF)) {
-                cjk++;
-            } else {
-                other++;
-            }
-        }
-        return Math.max(1, Math.round(cjk * 1.1f + other / 4f));
+        return TokenEstimator.estimate(text);
     }
 
     private static void emitDelta(WebView web, String id, String piece) {

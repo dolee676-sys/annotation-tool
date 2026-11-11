@@ -12,14 +12,21 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 public class MainActivity extends Activity {
     public static final String EXTRA_CAPTURE_TEXT = "captureText";
     private static final int REQUEST_TEXT_FILE = 41;
+    private static final int REQUEST_EXPORT_BACKUP = 42;
+    private static final int REQUEST_IMPORT_BACKUP = 43;
     private WebView web;
     private String pendingFileCallback;
 
@@ -87,9 +94,92 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * 备份导出（签名迁移用）：历史/收藏/用量存成一个 JSON，不含 API Key。
+     * 文件名带日期，位置由用户在系统选择器里定。
+     */
+    public void exportBackup() {
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/json");
+        String date = new SimpleDateFormat("yyyyMMdd", Locale.US).format(new Date());
+        intent.putExtra(Intent.EXTRA_TITLE, "zhujie-backup-" + date + ".json");
+        intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, REQUEST_EXPORT_BACKUP);
+        } catch (Exception exception) {
+            Toast.makeText(this, "没有可用的文件选择器。", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** 备份导入：挑一个之前导出的 zhujie-backup-*.json，内容由前端校验合并。 */
+    public void importBackup() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("application/json");
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            startActivityForResult(intent, REQUEST_IMPORT_BACKUP);
+        } catch (Exception exception) {
+            Toast.makeText(this, "没有可用的文件选择器。", Toast.LENGTH_SHORT).show();
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_EXPORT_BACKUP) {
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+                return;
+            }
+            try {
+                JSONObject backup = new JSONObject();
+                backup.put("format", "zhujie-backup");
+                backup.put("version", 1);
+                backup.put("exportedAt", System.currentTimeMillis());
+                backup.put("history", Store.array(this, "history"));
+                backup.put("favorites", Store.array(this, "favorites"));
+                backup.put("usage", Store.array(this, "usage"));
+                OutputStream output = getContentResolver().openOutputStream(data.getData());
+                if (output == null) {
+                    throw new IllegalStateException("empty");
+                }
+                output.write(backup.toString().getBytes("UTF-8"));
+                output.close();
+                Toast.makeText(this, "备份已导出（不含 API Key）。", Toast.LENGTH_LONG).show();
+            } catch (Exception exception) {
+                Toast.makeText(this, "导出备份失败。", Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
+        if (requestCode == REQUEST_IMPORT_BACKUP) {
+            if (resultCode != RESULT_OK || data == null || data.getData() == null) {
+                return;
+            }
+            try {
+                InputStream input = getContentResolver().openInputStream(data.getData());
+                if (input == null) {
+                    throw new IllegalStateException("empty");
+                }
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                byte[] buffer = new byte[8192];
+                int read;
+                int total = 0;
+                while ((read = input.read(buffer)) > 0) {
+                    total += read;
+                    if (total > 5_000_000) {
+                        break;
+                    }
+                    output.write(buffer, 0, read);
+                }
+                input.close();
+                emit("window.__backupPicked && window.__backupPicked("
+                        + JSONObject.quote(output.toString("UTF-8")) + ");");
+            } catch (Exception exception) {
+                Toast.makeText(this, "读取备份文件失败。", Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
         if (requestCode != REQUEST_TEXT_FILE) {
             return;
         }

@@ -3,7 +3,6 @@ package com.piona.zhujie;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -137,20 +136,7 @@ public final class ScreenOcr {
     }
 
     private static String readAll(InputStream input) throws Exception {
-        if (input == null) {
-            return "";
-        }
-        try (InputStream stream = input;
-             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[8192];
-            int read;
-            int total = 0;
-            while ((read = stream.read(buffer)) > 0 && total < 64_000) {
-                output.write(buffer, 0, read);
-                total += read;
-            }
-            return output.toString("UTF-8");
-        }
+        return HttpSupport.readAll(input, 64_000);
     }
 
     private static String friendly(String message) {
@@ -166,7 +152,7 @@ public final class ScreenOcr {
                 || lower.contains("balance")) {
             return "识图失败：账户余额不足。";
         }
-        if (lower.contains("timeout") || lower.contains("timed out")) {
+        if ("TIMEOUT".equals(HttpSupport.networkHint(message))) {
             return "识图超时，请再试一次。";
         }
         if (lower.contains("model") && (lower.contains("not found")

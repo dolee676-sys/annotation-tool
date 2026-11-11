@@ -97,6 +97,45 @@ public class Bridge {
         Store.clearRecords(activity);
     }
 
+    /**
+     * 备份导出：经系统文件选择器另存为 JSON（历史/收藏/用量）。
+     * 注意：不含任何 API Key——Key 只留在本机 Keystore 里，换签名重装后
+     * 需要重新填一次 Key。这是故意的：备份文件可能被传到别处，不能带 Key。
+     */
+    @JavascriptInterface
+    public void exportBackup() {
+        if (activity instanceof MainActivity) {
+            ((MainActivity) activity).exportBackup();
+        }
+    }
+
+    /** 备份导入：经系统文件选择器挑一个备份 JSON，内容由前端校验合并。 */
+    @JavascriptInterface
+    public void importBackup() {
+        if (activity instanceof MainActivity) {
+            ((MainActivity) activity).importBackup();
+        }
+    }
+
+    /**
+     * 导入时整列写回（前端已用 ZJCore.mergeRecords 按 id 去重合并）。
+     * 每列必须是 JSON 数组，否则整列不写、返回 ""；成功返回 "历史/收藏/用量" 条数。
+     */
+    @JavascriptInterface
+    public String importRecords(String historyJson, String favoritesJson, String usageJson) {
+        try {
+            org.json.JSONArray history = new org.json.JSONArray(historyJson);
+            org.json.JSONArray favorites = new org.json.JSONArray(favoritesJson);
+            org.json.JSONArray usage = new org.json.JSONArray(usageJson);
+            Store.put(activity, "history", history.toString());
+            Store.put(activity, "favorites", favorites.toString());
+            Store.put(activity, "usage", usage.toString());
+            return history.length() + "/" + favorites.length() + "/" + usage.length();
+        } catch (Exception exception) {
+            return "";
+        }
+    }
+
     @JavascriptInterface
     public void chat(String requestJson, String callbackId) {
         AiClient.chat(web, requestJson, callbackId);
@@ -241,12 +280,30 @@ public class Bridge {
     @JavascriptInterface
     public void downloadUpdate(String url, String sha256, String versionCode,
                                String versionName, String callbackId) {
+        downloadUpdate(url, sha256, versionCode, versionName, callbackId, "0");
+    }
+
+    /** 带清单期望字节数的下载入口（前端 update.js 用；旧 5 参入口保留兼容）。 */
+    @JavascriptInterface
+    public void downloadUpdate(String url, String sha256, String versionCode,
+                               String versionName, String callbackId, String expectedSize) {
         int expectedCode = 0;
         try {
             expectedCode = Integer.parseInt(versionCode);
         } catch (Exception ignored) {
         }
-        Updater.download(activity, web, url, sha256, expectedCode, versionName, callbackId);
+        long size = 0;
+        try {
+            size = Long.parseLong(expectedSize);
+        } catch (Exception ignored) {
+        }
+        Updater.download(activity, web, url, sha256, expectedCode, versionName, callbackId, size);
+    }
+
+    /** 前端下载看门狗超时后调用，让正在下载的线程真正停下。 */
+    @JavascriptInterface
+    public void cancelUpdateDownload(String callbackId) {
+        Updater.cancelDownload(callbackId);
     }
 
     @JavascriptInterface
