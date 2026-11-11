@@ -1,8 +1,1 @@
-{
-  "versionCode": 1019,
-  "versionName": "0.1.41",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.41.apk",
-  "sha256": "3cbdcaabcef8ad9e6ff33b3b827469592731bd02ef4cab6d115354ab7c7f578e",
-  "size": 268299,
-  "notes": "修复：键盘 Ctrl+C 复制、追问历史丢失、划选截图超时与气泡消失；首页精简、按键改小。"
-}
+{"notes":"首页改宽屏两栏（问候/开始阅读/统计 + 最近注解卡片）；钉住面板不再抢键盘焦点（OneNote 能正常回车）；复制请用面板内「复制」按钮。","sha256":"9b5c9a93ebdca5c26b8780b799be343009f7e263cb8e99f81b2ed2b0c55c8acf","size":268299,"url":"https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.43.apk","versionCode":1021,"versionName":"0.1.43"}
