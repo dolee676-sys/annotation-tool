@@ -1,8 +1,8 @@
 {
-  "versionCode": 1013,
-  "versionName": "0.1.35",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.35.apk",
-  "sha256": "92a56d7df190b74eac260c8e61c268257211dedaa3270c5eb76034d3893b00f4",
+  "versionCode": 1014,
+  "versionName": "0.1.36",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.36.apk",
+  "sha256": "9bba0c0c591b62ecc8e0e75a8498f12b7497a662c169dae4742a389d165f50ac",
   "size": 239499,
-  "notes": "更新包缓存与安装 URI 带版本号，避免安装器复用旧包；安装前显示当前→包内版本；下载多源兜底并提示手动安装。"
+  "notes": "新增悬浮取词总开关（关闭后选中不再弹注/问、划隐藏）；APK 增加 v1 JAR 签名，提升安装器兼容。"
 }
