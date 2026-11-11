@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">注解</string>
-    <string name="annotate">注解</string>
-    <string name="ask">提问</string>
-    <string name="accessibility_label">注解 · 划词</string>
-    <string name="accessibility_description">在任意应用中选中文字后显示「注解 / 提问」小条，读取你主动选中或复制的文字。使用「划」或整页抓取时会截屏，并把选区/整屏截图或页面文字发送给你配置的模型服务商识别与回答。Key 与历史只存本机。</string>
-</resources>
