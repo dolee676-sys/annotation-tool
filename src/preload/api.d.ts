@@ -67,6 +67,7 @@ export interface ZhujieApi {
   panelOpenSettings(): Promise<boolean>
   minimizeWindow(): Promise<boolean>
   hideWindow(): Promise<boolean>
+  quitApp(): Promise<boolean>
   on(channel: 'state:changed', callback: (payload: AppState) => void): () => void
   on(channel: 'usage:changed', callback: () => void): () => void
   on(channel: 'panel:init', callback: (payload: PanelInit) => void): () => void

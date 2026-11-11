@@ -9,6 +9,7 @@ import type {
   HistorySummary,
   ProviderKind,
   ProviderPatch,
+  ProviderView,
   SettingsPatch,
   UpdateProgress,
   UsageSummary
@@ -23,32 +24,21 @@ import {
   presetName,
   presetTagline
 } from '../../shared/presets'
-import { formatCny, usageMultiplier } from '../../shared/pricing'
+import { formatCny, formatUsageMultiplier, usageMultiplier } from '../../shared/pricing'
 import { groupQwenModels, modelDisplayName, type ModelGroup } from '../../shared/modelCatalog'
-import { setI18nLocale, t } from './i18n'
-import {
-  FavoriteCard,
-  Icon,
-  MultiplierBadge,
-  ProviderCard,
-  SummaryCard,
-  type TestState
-} from './cards'
-import {
-  fmtNum,
-  fmtTime,
-  historyThreadKey,
-  multiplierSuffix,
-  normalizeAppName,
-  promptForLocale,
-  readableError,
-  relativeTime
-} from './utils'
+import { getI18nLocale, setI18nLocale, t } from './i18n'
 import appIcon from './assets/app-icon.png'
 
 marked.setOptions({ gfm: true, breaks: true })
 
 type Tab = 'apps' | 'models' | 'prompt' | 'history' | 'favorites' | 'usage' | 'about'
+
+interface TestState {
+  loading?: boolean
+  ok?: boolean
+  error?: string
+  models?: number
+}
 
 interface CompressState {
   busy: boolean
@@ -100,6 +90,119 @@ const NAV: Array<{ id: Tab; label: string; icon: string }> = [
   { id: 'usage', label: '用量统计', icon: 'bars' },
   { id: 'about', label: '关于', icon: 'info' }
 ]
+
+function Icon({ name }: { name: string }): JSX.Element {
+  const paths: Record<string, JSX.Element> = {
+    apps: (
+      <>
+        <rect x="3" y="3" width="7" height="7" rx="1.6" />
+        <rect x="14" y="3" width="7" height="7" rx="1.6" />
+        <rect x="3" y="14" width="7" height="7" rx="1.6" />
+        <rect x="14" y="14" width="7" height="7" rx="1.6" />
+      </>
+    ),
+    chip: (
+      <>
+        <rect x="5" y="5" width="14" height="14" rx="3" />
+        <path d="M9 9h6M9 12h6M9 15h3" />
+      </>
+    ),
+    text: (
+      <>
+        <path d="M4 6h16M4 11h12M4 16h15M4 21h8" />
+      </>
+    ),
+    bars: (
+      <>
+        <path d="M4 20V10M10 20V4M16 20v-7M22 20v-4" />
+      </>
+    ),
+    info: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 10v6M12 7.2v.2" />
+      </>
+    ),
+    clock: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3.5 2" />
+      </>
+    ),
+    star: (
+      <path d="M12 3.2l2.7 5.5 6 .9-4.3 4.2 1 6-5.4-2.8-5.4 2.8 1-6-4.3-4.2 6-.9L12 3.2z" />
+    )
+  }
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+      {paths[name] ?? paths.info}
+    </svg>
+  )
+}
+
+const fmtNum = (n: number): string => n.toLocaleString(getI18nLocale())
+
+const fmtTime = (ts: number): string =>
+  new Date(ts).toLocaleString(getI18nLocale(), {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+
+const readableError = (error: unknown): string => {
+  const raw = error instanceof Error ? error.message : String(error)
+  return raw.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+}
+
+function MultiplierBadge({ value }: { value: number | null }): JSX.Element | null {
+  if (value === null) {
+    return (
+      <span className="multiplier unknown" title={t('未收录该模型价格，暂不比较')}>
+        —
+      </span>
+    )
+  }
+  const tone = value === 0 ? 'free' : value < 0.5 ? 'low' : value <= 2 ? 'mid' : 'high'
+  return (
+    <span
+      className={`multiplier ${tone}`}
+      title={t('相对 deepseek-flash 的 token 价格；按每百万 tokens 输入+输出估算，实际以用量页为准')}
+    >
+      {formatUsageMultiplier(value)}
+    </span>
+  )
+}
+
+const multiplierSuffix = (value: number | null): string => {
+  if (value === null) return ''
+  if (value === 0) return t('（免费）')
+  return `（${formatUsageMultiplier(value)}）`
+}
+
+const promptForLocale = (prompt: string, locale: string): string => {
+  const value = prompt.trim()
+  if (locale === 'en-US' && value === DEFAULT_PROMPT.trim()) return DEFAULT_PROMPT_EN
+  if (locale === 'zh-CN' && value === DEFAULT_PROMPT_EN.trim()) return DEFAULT_PROMPT
+  return prompt
+}
+
+const normalizeAppName = (value: string): string =>
+  value.trim().toLowerCase().replace(/\.exe$/i, '')
+
+function historyThreadKey(record: HistoryRecord): string {
+  return record.conversationId ?? `${record.programName}\u0000${record.text}`
+}
+
+function relativeTime(ts: number): string {
+  const diff = Date.now() - ts
+  const minutes = Math.floor(diff / 60000)
+  if (minutes < 1) return t('刚刚')
+  if (minutes < 60) return t('{count} 分钟前', { count: minutes })
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return t('{count} 小时前', { count: hours })
+  return t('{count} 天前', { count: Math.floor(hours / 24) })
+}
 
 export function App(): JSX.Element {
   const [state, setState] = useState<AppState | null>(null)
@@ -541,23 +644,18 @@ export function App(): JSX.Element {
     return list
   }, [state])
 
-  const selectPreset = useCallback(
-    (presetId: string, source: AppState, options?: { keepKey?: boolean }) => {
-      const preset = presetById(presetId)
-      const provider = source.providers.find((item) => (item.presetId ?? item.id) === presetId)
-      setSelectedPresetId(presetId)
-      // 面板切模型会触发默认设置同步、进而调到这里；这时正在设置页输入的
-      // API Key 草稿不能被清空，只有用户主动点 preset 卡片时才清空。
-      if (!options?.keepKey) setKeyDraft('')
-      setPresetNotice(null)
-      const preferred =
-        provider && provider.id === source.settings.defaultProviderId && source.settings.defaultModel
-          ? source.settings.defaultModel
-          : provider?.models[0] ?? preset?.models[0] ?? ''
-      setModelDraft(preferred)
-    },
-    []
-  )
+  const selectPreset = useCallback((presetId: string, source: AppState) => {
+    const preset = presetById(presetId)
+    const provider = source.providers.find((item) => (item.presetId ?? item.id) === presetId)
+    setSelectedPresetId(presetId)
+    setKeyDraft('')
+    setPresetNotice(null)
+    const preferred =
+      provider && provider.id === source.settings.defaultProviderId && source.settings.defaultModel
+        ? source.settings.defaultModel
+        : provider?.models[0] ?? preset?.models[0] ?? ''
+    setModelDraft(preferred)
+  }, [])
 
   useEffect(() => {
     if (!state || presetInitialized) return
@@ -582,9 +680,7 @@ export function App(): JSX.Element {
     const presetId = provider?.presetId ?? provider?.id
     if (!presetId || !presetById(presetId)) return
     if (presetId !== selectedPresetId) {
-      // 这是面板切模型触发的跟随同步，不是用户在设置页点的 preset 卡片，
-      // 正在输入的 API Key 草稿要保留。
-      selectPreset(presetId, state, { keepKey: true })
+      selectPreset(presetId, state)
       return
     }
     const next = state.settings.defaultModel
@@ -800,22 +896,6 @@ export function App(): JSX.Element {
     }
   }
 
-  // 预置服务商的“清除密钥”：Key 输入框留空表示“不修改”，界面上一直没有
-  // 删除已保存 Key 的入口，自定义服务商编辑器里同款按钮是 apiKey: null。
-  async function clearPresetKey(): Promise<void> {
-    if (!activePreset || !activeProvider) return
-    await window.zhujie.saveProvider({
-      id: activeProvider.id,
-      name: activePreset.name,
-      kind: activePreset.kind,
-      baseUrl: activePreset.baseUrl,
-      apiKey: null
-    })
-    setKeyDraft('')
-    setPresetNotice({ ok: true, message: t('已清除密钥') })
-    setState(await window.zhujie.getState())
-  }
-
   async function savePresetSettings(modelOverride?: string): Promise<void> {
     if (!activePreset || !activeProvider) return
     const model = (modelOverride ?? modelDraft).trim()
@@ -902,7 +982,7 @@ export function App(): JSX.Element {
           <button title={t('最小化')} onClick={() => void window.zhujie.minimizeWindow()}>
             ─
           </button>
-          <button title={t('隐藏到托盘')} onClick={() => void window.zhujie.hideWindow()}>
+          <button title={t('退出')} onClick={() => void window.zhujie.quitApp()}>
             ×
           </button>
         </div>
@@ -1357,15 +1437,6 @@ export function App(): JSX.Element {
                         onClick={() => void detectLocalModels()}
                       >
                         {t('重新检测模型')}
-                      </button>
-                    )}
-                    {!activePreset.local && activeProvider.hasKey && (
-                      <button
-                        className="ghost danger"
-                        disabled={presetBusy}
-                        onClick={() => void clearPresetKey()}
-                      >
-                        {t('清除密钥')}
                       </button>
                     )}
                     <span className="muted">
@@ -2251,6 +2322,24 @@ export function App(): JSX.Element {
                 </div>
               </div>
 
+              <div className="panel-card support-card">
+                <div className="card-head">
+                  <h2>{t('支持项目')}</h2>
+                </div>
+                <p className="muted">
+                  {t('如果你觉得好用，欢迎到 GitHub 给这个项目点个 Star。')}{' '}
+                  <a
+                    className="link"
+                    href="https://github.com/dolee676-sys/annotation-tool"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {t('去点 Star')}
+                  </a>
+                </p>
+                <p className="muted">{t('谢谢支持！')}</p>
+              </div>
+
               <div className="panel-card update-card">
                 <div className="card-head">
                   <h2>{t('版本更新')}</h2>
@@ -2436,6 +2525,196 @@ export function App(): JSX.Element {
       </div>
 
       {toast && <div className="toast">{toast}</div>}
+    </div>
+  )
+}
+
+interface ProviderCardProps {
+  provider: ProviderView
+  test?: TestState
+  isDefault: boolean
+  currentModel: string
+  onTest: () => void
+  onEdit: () => void
+  onRemove: () => void
+  onUseModel: (model: string) => void
+}
+
+function FavoriteCard({
+  favorite,
+  onDelete
+}: {
+  favorite: FavoriteRecord
+  onDelete: () => void
+}): JSX.Element {
+  const html = useMemo(
+    () => DOMPurify.sanitize(marked.parse(favorite.answer) as string),
+    [favorite.answer]
+  )
+  const [copied, setCopied] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+
+  const copy = async (): Promise<void> => {
+    await window.zhujie.writeClipboard(favorite.answer)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1400)
+  }
+
+  const fallback = (favorite.question || favorite.text || '').replace(/\s+/g, ' ').trim()
+  const title = favorite.title || fallback.slice(0, 40) || t('收藏')
+
+  return (
+    <article className="favorite-card">
+      <button
+        className="favorite-title-row"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+      >
+        <span className={favorite.mode === 'ask' ? 'history-mode ask' : 'history-mode'}>
+          {favorite.mode === 'ask' ? t('提问') : t('注解')}
+        </span>
+        <span className="favorite-title">{title}</span>
+        <span className="favorite-chevron">{expanded ? t('收起') : t('展开')}</span>
+      </button>
+      <div className="favorite-meta muted">
+        {fmtTime(favorite.ts)} · {favorite.programName} · {favorite.model}
+        <span className="favorite-spacer" />
+        <button className="link danger" onClick={onDelete}>
+          {t('删除')}
+        </button>
+      </div>
+      {expanded && (
+        <>
+          <div className="favorite-question">
+            <span>{favorite.question ? t('你的问题') : t('选中的文字')}</span>
+            <p>{favorite.question || favorite.text}</p>
+          </div>
+          <div className="favorite-answer markdown" dangerouslySetInnerHTML={{ __html: html }} />
+          <div className="favorite-foot">
+            {favorite.totalTokens.toLocaleString()} tokens · {formatCny(favorite.cost)}
+            {favorite.contextChars
+              ? ` · ${t('结合上下文 {count} 字', { count: favorite.contextChars })}`
+              : ''}
+            <span className="favorite-spacer" />
+            <button className="link" onClick={() => void copy()}>
+              {copied ? t('已复制') : t('复制回答')}
+            </button>
+          </div>
+        </>
+      )}
+    </article>
+  )
+}
+
+function SummaryCard({ summary }: { summary: HistorySummary }): JSX.Element {
+  const html = useMemo(
+    () => DOMPurify.sanitize(marked.parse(summary.summary) as string),
+    [summary.summary]
+  )
+  const [copied, setCopied] = useState(false)
+
+  const copy = async (): Promise<void> => {
+    await window.zhujie.writeClipboard(summary.summary)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1400)
+  }
+
+  return (
+    <details className="summary-card" open>
+      <summary>
+        <span className="history-mode summary">{t('综合')}</span>
+        <span className="summary-title">{t('{count} 条记录', { count: summary.sourceCount })}</span>
+        <span className="summary-meta">
+          {fmtTime(summary.fromTs)} – {fmtTime(summary.toTs)} · {summary.model}
+        </span>
+      </summary>
+      <div className="summary-body markdown" dangerouslySetInnerHTML={{ __html: html }} />
+      <div className="summary-foot">
+        <span>
+          {summary.providerName} · {summary.totalTokens.toLocaleString()} tokens ·{' '}
+          {formatCny(summary.cost)}
+        </span>
+        <button className="link" onClick={() => void copy()}>
+          {copied ? t('已复制') : t('复制摘要')}
+        </button>
+      </div>
+    </details>
+  )
+}
+
+function ProviderCard({
+  provider,
+  test,
+  isDefault,
+  currentModel,
+  onTest,
+  onEdit,
+  onRemove,
+  onUseModel
+}: ProviderCardProps): JSX.Element {
+  const local = /^(http:\/\/)?(localhost|127\.0\.0\.1|\[::1\])/i.test(provider.baseUrl)
+  const preset = presetById(provider.presetId ?? '')
+  const hasFree = local || Boolean(preset?.free) || (preset?.freeModels?.length ?? 0) > 0
+  return (
+    <div className={isDefault ? 'provider-card default' : 'provider-card'}>
+      <div className="provider-head">
+        <div>
+          <h3>
+            {provider.name}
+            {isDefault && <span className="pill accent">{t('默认')}</span>}
+            <span className={local ? 'pill' : 'pill warn'}>
+              {local ? t('本机') : t('外部')}
+            </span>
+            {hasFree && <span className="free-badge">{t('免费')}</span>}
+          </h3>
+          <code className="provider-url">{provider.baseUrl}</code>
+        </div>
+        <div className="provider-actions">
+          <button className="ghost" onClick={onTest} disabled={test?.loading}>
+            {test?.loading ? t('测试中…') : t('测试 / 拉取模型')}
+          </button>
+          <button className="ghost" onClick={onEdit}>
+            {t('编辑')}
+          </button>
+          {!provider.builtin && (
+            <button className="ghost danger" onClick={onRemove}>
+              {t('删除')}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="model-chips">
+        {provider.models.length === 0 ? (
+          <span className="muted">{t('尚未获取模型列表')}</span>
+        ) : (
+          provider.models.map((model) => (
+            <button
+              key={model}
+              className={model === currentModel ? 'chip-model active' : 'chip-model'}
+              onClick={() => onUseModel(model)}
+              title={t('设为默认模型')}
+            >
+              {modelDisplayName(provider.presetId ?? provider.id, model)}
+              <MultiplierBadge
+                value={usageMultiplier({
+                  model,
+                  local,
+                  fallbackIn: provider.priceIn,
+                  fallbackOut: provider.priceOut,
+                  useFallback: !provider.builtin
+                })}
+              />
+            </button>
+          ))
+        )}
+      </div>
+
+      {test?.error && <p className="test-error">{test.error}</p>}
+      {test?.ok && (
+        <p className="test-ok">{t('连接正常，发现 {count} 个模型。', { count: test.models ?? 0 })}</p>
+      )}
+      {provider.hasKey && <span className="key-flag">{t('已保存 API Key')}</span>}
     </div>
   )
 }

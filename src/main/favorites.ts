@@ -48,6 +48,15 @@ export class FavoriteStore {
     return this.items.find((item) => item.turnId === turnId)
   }
 
+  setTitle(id: string, title: string): boolean {
+    if (!this.items.some((item) => item.id === id)) return false
+    const previous = this.items
+    this.items = this.items.map((item) => (item.id === id ? { ...item, title } : item))
+    if (this.rewrite()) return true
+    this.items = previous
+    return false
+  }
+
   remove(id: string): boolean {
     const previous = this.items
     this.items = this.items.filter((item) => item.id !== id)

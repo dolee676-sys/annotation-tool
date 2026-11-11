@@ -139,32 +139,6 @@ export class SettingsStore {
     try {
       const raw = JSON.parse(readFileSync(file, 'utf8')) as Partial<StoredSettings>
       const merged: StoredSettings = { ...defaults(), ...raw }
-      // settings.json 语义损坏时（合法 JSON 但类型不对）不能整份丢弃：
-      // 非对象条目丢弃，非数组 models 矫正为空数组，非字符串模型名过滤掉。
-      // 否则下面遍历 providers 会抛错，整个设置文件会被当成损坏备份并重置。
-      if (!Array.isArray(raw.providers)) {
-        merged.providers = defaultProviders()
-      } else {
-        merged.providers = raw.providers
-          .filter(
-            (entry): entry is StoredProvider =>
-              Boolean(entry) &&
-              typeof entry === 'object' &&
-              typeof (entry as StoredProvider).id === 'string' &&
-              (entry as StoredProvider).id.length > 0
-          )
-          .map((entry) => ({
-            ...entry,
-            models: Array.isArray(entry.models)
-              ? entry.models.filter((model): model is string => typeof model === 'string')
-              : []
-          }))
-      }
-      // 默认服务商指向不存在的 id 时回到 ollama，不留悬空默认。
-      if (!merged.providers.some((provider) => provider.id === merged.defaultProviderId)) {
-        merged.defaultProviderId = 'ollama'
-        merged.defaultModel = ''
-      }
       if (!raw.language) merged.language = 'zh-CN'
       if (!raw.answerLanguage) merged.answerLanguage = 'auto'
       for (const provider of merged.providers) {
@@ -318,13 +292,7 @@ export class SettingsStore {
       ).slice(0, 80)
     }
     if (typeof patch.prompt === 'string' && patch.prompt.trim()) next.prompt = patch.prompt.trim()
-    // 默认服务商只接受已存在的 id，不存在的直接忽略，不留悬空默认。
-    if (
-      typeof patch.defaultProviderId === 'string' &&
-      next.providers.some((provider) => provider.id === patch.defaultProviderId)
-    ) {
-      next.defaultProviderId = patch.defaultProviderId
-    }
+    if (typeof patch.defaultProviderId === 'string') next.defaultProviderId = patch.defaultProviderId
     if (typeof patch.defaultModel === 'string' && patch.defaultModel.trim()) {
       next.defaultModel = patch.defaultModel.trim()
     }

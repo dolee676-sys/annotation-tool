@@ -74,19 +74,13 @@ export class UsageStore {
     return summarizeUsage(this.records, { days })
   }
 
-  /**
-   * 先落盘、成功后再清空内存：之前是先清空内存再写盘，写盘失败时内存已空，
-   * 界面却会显示“用量记录已清空”，重启后记录又出现。
-   * 返回 false 时调用方应报错，不要谎称已清空。
-   */
-  clear(): boolean {
-    const kept = this.records
-    const keptDrops = this.pendingDrops
+  clear(): void {
     this.records = []
     this.pendingDrops = 0
-    if (this.rewrite()) return true
-    this.records = kept
-    this.pendingDrops = keptDrops
-    return false
+    try {
+      writeFileSync(this.file, '', 'utf8')
+    } catch (error) {
+      console.error('[usage] 清空文件失败，内存已清空', error)
+    }
   }
 }

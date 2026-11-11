@@ -272,10 +272,10 @@ export class WindowManager {
       this.settings?.show()
       this.settings?.focus()
     })
-    this.settings.on('close', (event) => {
+    this.settings.on('close', () => {
       if (!this.quitting) {
-        event.preventDefault()
-        this.settings?.hide()
+        this.quitting = true
+        app.quit()
       }
     })
     this.settings.on('closed', () => {

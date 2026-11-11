@@ -216,6 +216,7 @@ export interface FavoriteRecord {
   model: string
   text: string
   question?: string
+  title?: string
   answer: string
   contextChars?: number
   totalTokens: number

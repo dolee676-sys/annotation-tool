@@ -37,6 +37,7 @@ const api = {
   writeClipboard: (text: string) => ipcRenderer.invoke('clipboard:write', text),
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   hideWindow: () => ipcRenderer.invoke('window:hide'),
+  quitApp: () => ipcRenderer.invoke('window:quit'),
   on: (channel: EventChannel, callback: (payload: unknown) => void) => {
     if (!EVENT_CHANNELS.includes(channel)) return () => undefined
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown): void => callback(payload)

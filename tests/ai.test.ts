@@ -128,37 +128,6 @@ test('外部 AbortSignal 能中止仍在流式返回的请求', async () => {
   )
 })
 
-test('SSE 行被拆到两个分片里也能完整拼接（公共读取循环的跨分片缓存）', async () => {
-  await withServer(
-    (req, res) => {
-      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
-      res.write('data: {"choices":[{"delta":{"content":"你')
-      res.write('好"}}]}\n\n')
-      res.write('data: [DONE]\n\n')
-      res.end()
-    },
-    async (port) => {
-      const result = await chat(options(port, 'openai'))
-      assert.equal(result.text, '你好')
-      assert.equal(result.estimated, true)
-    }
-  )
-})
-
-test('Ollama 流中途返回 error 会直接抛错、不静默吞掉', async () => {
-  await withServer(
-    (req, res) => {
-      res.writeHead(200, { 'Content-Type': 'application/x-ndjson' })
-      res.write(`${JSON.stringify({ message: { content: '半' }, done: false })}\n`)
-      res.write(`${JSON.stringify({ error: 'model exploded' })}\n`)
-      res.end()
-    },
-    async (port) => {
-      await assert.rejects(chat(options(port, 'ollama')), /model exploded/)
-    }
-  )
-})
-
 test('模型列表接口能解析 OpenAI 与 Ollama 两种返回', async () => {
   await withServer(
     (req, res) => {

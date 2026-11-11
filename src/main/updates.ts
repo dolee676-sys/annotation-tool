@@ -107,10 +107,6 @@ export class UpdateManager {
   async check(): Promise<UpdateStatus> {
     if (this.busy || this.downloading || this.status.phase === 'downloading') return this.status
     if (this.status.phase === 'ready') return this.status
-    // 先记下已知的最新版本：检查失败时不能把它丢掉，否则“重试下载”按钮
-    // 也会跟着消失（download() 要求 status 里有 latestVersion）。
-    const previousLatest = this.status.latestVersion
-    const previousReleaseUrl = this.status.releaseUrl
     this.busy = true
     this.setStatus({ phase: 'checking', currentVersion: this.currentVersion })
 
@@ -155,8 +151,7 @@ export class UpdateManager {
       this.setStatus({
         phase: 'error',
         currentVersion: this.currentVersion,
-        latestVersion: previousLatest,
-        releaseUrl: previousReleaseUrl,
+        latestVersion: this.status.latestVersion,
         message: friendlyCheckError(error, this.getLocale())
       })
       return this.status

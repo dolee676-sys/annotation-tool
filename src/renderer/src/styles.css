@@ -2117,6 +2117,33 @@ button.link {
   background: var(--surface);
 }
 
+.favorite-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0 0 6px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+}
+.favorite-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.favorite-chevron { flex: none; font-size: 10px; color: var(--accent); }
+.favorite-spacer { flex: 1; }
+
 .favorite-head {
   display: flex;
   align-items: flex-start;
@@ -2130,6 +2157,7 @@ button.link {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  font-size: 10px;
 }
 
 .favorite-meta .muted {
@@ -2179,6 +2207,10 @@ button.link {
 }
 
 .favorite-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px solid var(--line);

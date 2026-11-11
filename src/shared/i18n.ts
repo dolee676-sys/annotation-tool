@@ -404,6 +404,13 @@ const EN: Record<string, string> = {
   '划词注解 · 本地优先的阅读辅助工具。': 'Selection annotation · a local-first reading assistant.',
   '版本': 'Version',
   '制作': 'Made by',
+  '支持项目': 'Support the project',
+  '如果你觉得好用，欢迎到 GitHub 给这个项目点个 Star。':
+    'If you find it useful, please consider giving it a Star on GitHub.',
+  '去点 Star': 'Star on GitHub',
+  '谢谢支持！': 'Thanks for your support!',
+  '展开': 'Expand',
+  '收起': 'Collapse',
   '平台': 'Platform',
   '取词服务': 'Selection service',
   '重启中…': 'Restarting…',

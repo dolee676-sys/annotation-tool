@@ -93,73 +93,6 @@ export async function listModels(
   }
 }
 
-interface StreamState {
-  text: string
-  promptTokens: number
-  completionTokens: number
-  gotUsage: boolean
-}
-
-function emptyStreamState(): StreamState {
-  return { text: '', promptTokens: 0, completionTokens: 0, gotUsage: false }
-}
-
-/**
- * 流式响应的公共读取循环：Ollama（NDJSON）与 OpenAI 兼容（SSE）只在行解析上不同，
- * 按行切分、跨分片缓存、结束/出错/中止时取消 reader 用的都是同一套逻辑。
- * onLine 抛出的错误会原样向上传播，finally 仍会取消 reader，不留悬空的流。
- */
-async function pumpLines(res: Response, onLine: (line: string) => void): Promise<void> {
-  if (!res.body) throw new Error('模型服务没有返回内容')
-  const reader = res.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-  try {
-    for (;;) {
-      const { value, done } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      let idx = buffer.indexOf('\n')
-      while (idx >= 0) {
-        onLine(buffer.slice(0, idx))
-        buffer = buffer.slice(idx + 1)
-        idx = buffer.indexOf('\n')
-      }
-    }
-    buffer += decoder.decode()
-    if (buffer) onLine(buffer)
-  } finally {
-    try {
-      await reader.cancel()
-    } catch {
-      /* 流已关闭或已取消 */
-    }
-  }
-}
-
-/** 流结束后的公共收尾：服务端没给用量时按字符估算，并标记 estimated。 */
-function finishChat(options: ChatOptions, state: StreamState): ChatResult {
-  if (!state.text.trim()) throw new Error('模型没有返回可显示的内容')
-  if (!state.gotUsage) {
-    const promptTokens = estimateTokens(`${options.system}\n${options.user}`)
-    const completionTokens = estimateTokens(state.text)
-    return {
-      text: state.text,
-      promptTokens,
-      completionTokens,
-      totalTokens: promptTokens + completionTokens,
-      estimated: true
-    }
-  }
-  return {
-    text: state.text,
-    promptTokens: state.promptTokens,
-    completionTokens: state.completionTokens,
-    totalTokens: state.promptTokens + state.completionTokens,
-    estimated: false
-  }
-}
-
 async function chatOllama(options: ChatOptions): Promise<ChatResult> {
   const base = trimBase(options.provider.baseUrl).replace(/\/v1$/, '')
   const res = await fetch(joinUrl(base, '/api/chat'), {
@@ -177,9 +110,17 @@ async function chatOllama(options: ChatOptions): Promise<ChatResult> {
     })
   })
   if (!res.ok) throw new Error(await readError(res))
+  if (!res.body) throw new Error('模型服务没有返回内容')
 
-  const state = emptyStreamState()
-  await pumpLines(res, (line) => {
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let text = ''
+  let promptTokens = 0
+  let completionTokens = 0
+  let gotUsage = false
+
+  const handleLine = (line: string): void => {
     const trimmed = line.trim()
     if (!trimmed) return
     let obj: {
@@ -196,16 +137,49 @@ async function chatOllama(options: ChatOptions): Promise<ChatResult> {
     }
     if (obj.error) throw new Error(obj.error)
     if (obj.message?.content) {
-      state.text += obj.message.content
+      text += obj.message.content
       options.onDelta(obj.message.content)
     }
     if (obj.done) {
-      state.promptTokens = obj.prompt_eval_count ?? 0
-      state.completionTokens = obj.eval_count ?? 0
-      state.gotUsage = state.promptTokens > 0 || state.completionTokens > 0
+      promptTokens = obj.prompt_eval_count ?? 0
+      completionTokens = obj.eval_count ?? 0
+      gotUsage = promptTokens > 0 || completionTokens > 0
     }
-  })
-  return finishChat(options, state)
+  }
+
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let idx = buffer.indexOf('\n')
+    while (idx >= 0) {
+      handleLine(buffer.slice(0, idx))
+      buffer = buffer.slice(idx + 1)
+      idx = buffer.indexOf('\n')
+    }
+  }
+  buffer += decoder.decode()
+  handleLine(buffer)
+
+  if (!text.trim()) throw new Error('模型没有返回可显示的内容')
+  if (!gotUsage) {
+    const promptTokensEst = estimateTokens(`${options.system}\n${options.user}`)
+    const completionTokensEst = estimateTokens(text)
+    return {
+      text,
+      promptTokens: promptTokensEst,
+      completionTokens: completionTokensEst,
+      totalTokens: promptTokensEst + completionTokensEst,
+      estimated: true
+    }
+  }
+  return {
+    text,
+    promptTokens,
+    completionTokens,
+    totalTokens: promptTokens + completionTokens,
+    estimated: false
+  }
 }
 
 async function chatOpenAI(options: ChatOptions): Promise<ChatResult> {
@@ -225,9 +199,17 @@ async function chatOpenAI(options: ChatOptions): Promise<ChatResult> {
     })
   })
   if (!res.ok) throw new Error(await readError(res))
+  if (!res.body) throw new Error('模型服务没有返回内容')
 
-  const state = emptyStreamState()
-  await pumpLines(res, (line) => {
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let text = ''
+  let promptTokens = 0
+  let completionTokens = 0
+  let gotUsage = false
+
+  const handleLine = (line: string): void => {
     const trimmed = line.trim()
     if (!trimmed.startsWith('data:')) return
     const payload = trimmed.slice(5).trim()
@@ -246,16 +228,49 @@ async function chatOpenAI(options: ChatOptions): Promise<ChatResult> {
     const choice = obj.choices?.[0]
     const piece = choice?.delta?.content ?? choice?.message?.content ?? ''
     if (piece) {
-      state.text += piece
+      text += piece
       options.onDelta(piece)
     }
     if (obj.usage) {
-      state.promptTokens = obj.usage.prompt_tokens ?? 0
-      state.completionTokens = obj.usage.completion_tokens ?? 0
-      state.gotUsage = true
+      promptTokens = obj.usage.prompt_tokens ?? 0
+      completionTokens = obj.usage.completion_tokens ?? 0
+      gotUsage = true
     }
-  })
-  return finishChat(options, state)
+  }
+
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let idx = buffer.indexOf('\n')
+    while (idx >= 0) {
+      handleLine(buffer.slice(0, idx))
+      buffer = buffer.slice(idx + 1)
+      idx = buffer.indexOf('\n')
+    }
+  }
+  buffer += decoder.decode()
+  handleLine(buffer)
+
+  if (!text.trim()) throw new Error('模型没有返回可显示的内容')
+  if (!gotUsage) {
+    const promptTokensEst = estimateTokens(`${options.system}\n${options.user}`)
+    const completionTokensEst = estimateTokens(text)
+    return {
+      text,
+      promptTokens: promptTokensEst,
+      completionTokens: completionTokensEst,
+      totalTokens: promptTokensEst + completionTokensEst,
+      estimated: true
+    }
+  }
+  return {
+    text,
+    promptTokens,
+    completionTokens,
+    totalTokens: promptTokens + completionTokens,
+    estimated: false
+  }
 }
 
 export async function chat(options: ChatOptions): Promise<ChatResult> {
