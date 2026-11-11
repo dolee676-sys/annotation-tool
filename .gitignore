@@ -15,3 +15,9 @@ selftest/about.png
 *.pem
 *.key
 *.p12
+
+# Android 平板端：构建产物与签名材料（永不提交）
+android-tablet/build/
+android-tablet/.test-keystore/
+android-tablet/keystore/
+*.jks
