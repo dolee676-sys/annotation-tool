@@ -1,8 +1,8 @@
 {
-  "versionCode": 1019,
-  "versionName": "0.1.41",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.41.apk",
-  "sha256": "b03263de46c40b54f8dcca645326b10eba6c07afb609da944e26d55fe47532c0",
+  "versionCode": 1020,
+  "versionName": "0.1.42",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.42.apk",
+  "sha256": "d21519b91f4e1057d10c0d034a0603f0e2c4a87f8dbdbaf95f767d7741bb8b3a",
   "size": 268299,
-  "notes": "修复：点注后面板消失（还原稳定面板生命周期，不复用/不抢焦点）、截屏超时放宽到 8 秒减少误判；保留追问多轮历史。"
+  "notes": "修复：三引号被误当回答对象（提示词改用边界标记）；追问合并进同一条注解并带完整问答串；历史记录首屏空白。"
 }
