@@ -1,8 +1,8 @@
 {
-  "versionCode": 1014,
-  "versionName": "0.1.36",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.36.apk",
-  "sha256": "9bba0c0c591b62ecc8e0e75a8498f12b7497a662c169dae4742a389d165f50ac",
+  "versionCode": 1015,
+  "versionName": "0.1.37",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.37.apk",
+  "sha256": "f41060d6c3cb6db4e15981fa051a1b5fa80dcb1032776d904c89aa09558c438a",
   "size": 239499,
-  "notes": "新增悬浮取词总开关（关闭后选中不再弹注/问、划隐藏）；APK 增加 v1 JAR 签名，提升安装器兼容。"
+  "notes": "关闭取词总开关时，同时去掉系统选中菜单里的「注解/提问」入口（禁用相关活动），开启时恢复；启动按状态同步。"
 }
