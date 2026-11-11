@@ -230,20 +230,31 @@ public class Bridge {
         applyCaptureComponents(context, !"0".equals(Store.get(context, "captureEnabled", "1")));
     }
 
+    /**
+     * 性能：setComponentEnabledSetting 是两次 PackageManager 跨进程调用，
+     * 原来在 MainActivity.onCreate 的主线程上跑，白白拖慢首屏；现在扔到
+     * 单线程后台队列里做，行为不变（开关状态照样写，只是异步几毫秒落盘）。
+     */
+    private static final java.util.concurrent.ExecutorService COMPONENT_EXECUTOR =
+            java.util.concurrent.Executors.newSingleThreadExecutor();
+
     static void applyCaptureComponents(Context context, boolean on) {
-        int state = on
-                ? android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                : android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
-        try {
-            android.content.pm.PackageManager pm = context.getPackageManager();
-            pm.setComponentEnabledSetting(
-                    new android.content.ComponentName(context, AnnotateActivity.class),
-                    state, android.content.pm.PackageManager.DONT_KILL_APP);
-            pm.setComponentEnabledSetting(
-                    new android.content.ComponentName(context, AskActivity.class),
-                    state, android.content.pm.PackageManager.DONT_KILL_APP);
-        } catch (Exception ignored) {
-        }
+        final Context appContext = context.getApplicationContext();
+        COMPONENT_EXECUTOR.execute(() -> {
+            int state = on
+                    ? android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                    : android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
+            try {
+                android.content.pm.PackageManager pm = appContext.getPackageManager();
+                pm.setComponentEnabledSetting(
+                        new android.content.ComponentName(appContext, AnnotateActivity.class),
+                        state, android.content.pm.PackageManager.DONT_KILL_APP);
+                pm.setComponentEnabledSetting(
+                        new android.content.ComponentName(appContext, AskActivity.class),
+                        state, android.content.pm.PackageManager.DONT_KILL_APP);
+            } catch (Exception ignored) {
+            }
+        });
     }
 
     @JavascriptInterface

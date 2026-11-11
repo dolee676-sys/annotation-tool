@@ -36,6 +36,14 @@ public class OverlayPanel {
     private FrameLayout panelRoot;
     private WindowManager.LayoutParams panelParams;
     private boolean panelPinned;
+    /**
+     * 复用的面板 WebView：原来每次打开都 new WebView + 加载页面、关闭就
+     * destroy，下次打开又要重付 WebView 创建 + 页面解析的固定开销，
+     * 点「注」到面板出来要等一截。现在关面板时只 detach、不销毁，
+     * 下次打开复用它，只 reload 一次页面（reload 会重跑 JS 初始化，
+     * 旧回答、旧状态不会漏到新面板里）。服务销毁时由 destroy() 真销毁。
+     */
+    private WebView cachedWeb;
 
     public OverlayPanel(AccessibilityService service, Handler handler,
                         WindowManager windowManager, Host host) {
@@ -91,7 +99,11 @@ public class OverlayPanel {
         y = Math.max(UiUtil.dp(service, 40), Math.min(y, screenHeight - cardHeight - UiUtil.dp(service, 24)));
 
         panelPinned = false;
-        panelWeb = new WebView(service);
+        panelWeb = cachedWeb;
+        cachedWeb = null;
+        if (panelWeb == null) {
+            panelWeb = new WebView(service);
+        }
         WebSettings settings = panelWeb.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -228,11 +240,29 @@ public class OverlayPanel {
             try {
                 web.removeJavascriptInterface("AndroidBridge");
                 web.stopLoading();
-                web.destroy();
+            } catch (Exception ignored) {
+            }
+            // 只 detach、不 destroy：留给下次 show() 复用。
+            // 旧 bridge 已解绑，下次 show 会绑新的（新文字/新模式），
+            // 再 loadUrl 一次，JS 状态是全新的。
+            cachedWeb = web;
+        }
+        host.restoreCaptureBubble();
+    }
+
+    /** 服务销毁时调用：真正销毁复用的 WebView，释放渲染进程。 */
+    public void destroy() {
+        close();
+        WebView cached = cachedWeb;
+        cachedWeb = null;
+        if (cached != null) {
+            try {
+                cached.removeJavascriptInterface("AndroidBridge");
+                cached.stopLoading();
+                cached.destroy();
             } catch (Exception ignored) {
             }
         }
-        host.restoreCaptureBubble();
     }
 
     public void move(int dx, int dy) {

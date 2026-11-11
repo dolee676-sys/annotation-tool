@@ -82,6 +82,9 @@ public final class AiClient {
         }
         long started = System.currentTimeMillis();
         HttpURLConnection connection = null;
+        // 干净走完整个流才算 cleanFinish（声明放方法头：finally 也要用，
+        // 放 try 中途会编译报错“可能未初始化”）。
+        boolean cleanFinish = false;
         try {
             JSONObject request = new JSONObject(requestJson);
             String baseUrl = request.optString("baseUrl", "").trim();
@@ -146,6 +149,17 @@ public final class AiClient {
             int totalTokens = 0;
             boolean hasUsage = false;
             String error = null;
+            // 流式增量合并：原来每来一个 token 就 post 一次 evaluateJavascript，
+            // 高速流式时一秒几十次桥接调用，WebView 主线程全在处理回调；
+            // 现在攒起来发——首片立刻发（首字延迟不变），之后最多 50ms
+            // 一发或攒够 128 字一发，桥接调用从每 token 一次降到每秒约 20 次。
+            StringBuilder pendingDelta = new StringBuilder();
+            long lastDeltaFlush = 0;
+            boolean firstDelta = true;
+            // 干净走完整个流才算 cleanFinish：响应体读完、不断开连接，
+            // 让 HttpURLConnection 的连接池复用这条 TLS 连接，下次同一
+            // 个 host 的提问省一次握手（云端模型首字延迟的大头之一）；
+            // 取消/报错仍走 disconnect。
 
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8))) {
@@ -190,7 +204,15 @@ public final class AiClient {
                             }
                             if (!piece.isEmpty()) {
                                 answer.append(piece);
-                                emitDelta(web, callbackId, piece);
+                                pendingDelta.append(piece);
+                                long now = System.currentTimeMillis();
+                                if (firstDelta || now - lastDeltaFlush >= 50
+                                        || pendingDelta.length() >= 128) {
+                                    emitDelta(web, callbackId, pendingDelta.toString());
+                                    pendingDelta.setLength(0);
+                                    lastDeltaFlush = now;
+                                    firstDelta = false;
+                                }
                             }
                         }
                         JSONObject usage = chunk.optJSONObject("usage");
@@ -203,6 +225,12 @@ public final class AiClient {
                     } catch (Exception ignored) {
                     }
                 }
+                cleanFinish = error == null;
+            }
+            // 流读完后把攒着没发的尾巴一次发出去，再发 done（顺序靠 web.post 的队列保证）。
+            if (pendingDelta.length() > 0) {
+                emitDelta(web, callbackId, pendingDelta.toString());
+                pendingDelta.setLength(0);
             }
 
             if (CANCELLED.contains(callbackId)) {
@@ -240,7 +268,9 @@ public final class AiClient {
             CANCELLED.remove(callbackId);
             ACTIVE.remove(callbackId);
             OWNER.remove(callbackId);
-            if (connection != null) {
+            // 干净走完才留连接给连接池复用；取消/报错/没读完时断开，
+            // 否则半截流会占着一条没法复用的连接。
+            if (!cleanFinish && connection != null) {
                 try {
                     connection.disconnect();
                 } catch (Exception ignored) {

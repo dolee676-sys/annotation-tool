@@ -43,23 +43,38 @@ public final class Store {
         prefs(context).edit().putString(key, stored).apply();
     }
 
-    /** 设置（含 API Key）用 Android Keystore 的 AES-GCM 密钥加密落盘；失败时退回明文，保证不锁死。 */
+    /**
+     * 性能：Keystore 密钥只取一次并缓存。原来每次读/写设置（Bridge.getSettings
+     * 在 JS 里一次启动要调几十次）都要 KeyStore.getInstance + load(null) +
+     * getKey，全是跨进程调用，硬件 Keystore 上一次能到几十毫秒；缓存后
+     * 只有第一次走 Keystore。密钥失效（清缓存）时解密失败仍走原来的
+     * 明文/空值兜底，行为不变；失败时把缓存清掉，下次重新取。
+     */
+    private static volatile SecretKey cachedSettingKey;
+
     private static SecretKey settingKey() throws Exception {
+        SecretKey key = cachedSettingKey;
+        if (key != null) {
+            return key;
+        }
         KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
         ks.load(null);
         if (ks.containsAlias(KEY_ALIAS)) {
-            return (SecretKey) ks.getKey(KEY_ALIAS, null);
+            key = (SecretKey) ks.getKey(KEY_ALIAS, null);
+        } else {
+            KeyGenParameterSpec spec = new KeyGenParameterSpec.Builder(
+                    KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setKeySize(256)
+                    .build();
+            KeyGenerator generator = KeyGenerator.getInstance(
+                    KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
+            generator.init(spec);
+            key = generator.generateKey();
         }
-        KeyGenParameterSpec spec = new KeyGenParameterSpec.Builder(
-                KEY_ALIAS, KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .build();
-        KeyGenerator generator = KeyGenerator.getInstance(
-                KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
-        generator.init(spec);
-        return generator.generateKey();
+        cachedSettingKey = key;
+        return key;
     }
 
     private static String encryptSetting(String plain) {
@@ -74,6 +89,7 @@ public final class Store {
             return ENC_PREFIX + Base64.encodeToString(iv, Base64.NO_WRAP)
                     + ":" + Base64.encodeToString(ct, Base64.NO_WRAP);
         } catch (Exception exception) {
+            cachedSettingKey = null;
             return plain;
         }
     }
@@ -90,6 +106,7 @@ public final class Store {
             cipher.init(Cipher.DECRYPT_MODE, settingKey(), new GCMParameterSpec(128, iv));
             return new String(cipher.doFinal(ct), StandardCharsets.UTF_8);
         } catch (Exception exception) {
+            cachedSettingKey = null;
             return null;
         }
     }
