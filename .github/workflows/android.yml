@@ -1,0 +1,118 @@
+name: Android
+
+# 安卓平板端 CI：Node 单测 + Java 纯函数单测 + 模型数据同步校验 +
+# 版本双写校验 + Linux 全量构建（测试签名，仅验证能编过）。
+# 注意：SDK 不走 sdkmanager（Java 的网络在某些沙箱里不通），
+# 直接用 curl 从 dl.google.com 下官方包并做 SHA-1 校验。
+# 构建产物是测试签名的 APK，只作为 CI 制品留存，不可用于覆盖安装；
+# 正式发布仍须在 Rick 的 Windows 机器上用原 keystore 编（见 build.sh）。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'android-tablet/**'
+      - 'shared/model-data.json'
+      - 'tools/sync-model-data.js'
+      - 'tools/check-version.sh'
+      - '.github/workflows/android.yml'
+  pull_request:
+    paths:
+      - 'android-tablet/**'
+      - 'shared/model-data.json'
+      - 'tools/sync-model-data.js'
+      - 'tools/check-version.sh'
+      - '.github/workflows/android.yml'
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: ${{ github.workspace }}/android-sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Android SDK (curl, SHA-1 verified)
+        run: |
+          set -euo pipefail
+          mkdir -p "$ANDROID_HOME" /tmp/sdk-dl
+          cd /tmp/sdk-dl
+          curl -fsSL -o build-tools.zip \
+            https://dl.google.com/android/repository/build-tools_r35_linux.zip
+          echo "2cfaa0bbb2336e9ec18ed3ecea84fa2e2af607bc  build-tools.zip" | sha1sum -c -
+          curl -fsSL -o platform.zip \
+            https://dl.google.com/android/repository/platform-35-ext15_r01.zip
+          echo "ce757091f933b7ac646bf197ce8957cc73b95614  platform.zip" | sha1sum -c -
+          mkdir -p bt pf
+          unzip -q build-tools.zip -d bt
+          unzip -q platform.zip -d pf
+          # zip 内目录层级可能变化：按 aapt2 / android.jar 定位后再归位
+          AAPT2_DIR="$(dirname "$(find bt -name aapt2 -type f | head -1)")"
+          mkdir -p "$ANDROID_HOME/build-tools/35.0.0"
+          cp -a "$AAPT2_DIR"/. "$ANDROID_HOME/build-tools/35.0.0/"
+          JAR_DIR="$(dirname "$(find pf -name android.jar | head -1)")"
+          mkdir -p "$ANDROID_HOME/platforms/android-35"
+          cp -a "$JAR_DIR"/. "$ANDROID_HOME/platforms/android-35/"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt2" version
+
+      - name: JS syntax check
+        run: |
+          for f in android-tablet/app/assets/js/app.js \
+                   android-tablet/app/assets/js/core.js \
+                   android-tablet/app/assets/js/update.js \
+                   android-tablet/app/assets/js/home.js \
+                   android-tablet/app/assets/js/presets.js \
+                   android-tablet/app/assets/js/prompt.js \
+                   android-tablet/app/assets/js/panel.js \
+                   android-tablet/app/assets/js/capture.js; do
+            node --check "$f"
+          done
+
+      - name: Node tests
+        run: node --test android-tablet/tests/js.test.js
+
+      - name: Java pure-function tests
+        run: |
+          rm -rf /tmp/zhujie-test-classes && mkdir -p /tmp/zhujie-test-classes
+          javac -encoding UTF-8 -d /tmp/zhujie-test-classes \
+            android-tablet/app/src/com/piona/zhujie/UpdateLogic.java \
+            android-tablet/app/src/com/piona/zhujie/UrlSafety.java \
+            android-tablet/app/src/com/piona/zhujie/TokenEstimator.java \
+            android-tablet/app/src/com/piona/zhujie/HttpSupport.java \
+            android-tablet/app/src/com/piona/zhujie/ChipGate.java \
+            android-tablet/tests/JavaPureTest.java
+          java -cp /tmp/zhujie-test-classes com.piona.zhujie.JavaPureTest
+
+      - name: Model data sync check
+        run: node tools/sync-model-data.js
+
+      - name: Version check
+        run: bash tools/check-version.sh
+
+      - name: Linux build (test-signed)
+        run: bash android-tablet/build-linux.sh
+
+      - name: Verify APK
+        run: |
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          "$BT/aapt2" dump badging android-tablet/build/zhujie-tablet.apk | head -3
+          java --enable-native-access=ALL-UNNAMED -jar "$BT/lib/apksigner.jar" \
+            verify --verbose android-tablet/build/zhujie-tablet.apk
+          sha256sum android-tablet/build/zhujie-tablet.apk
+          test -s android-tablet/build/zhujie-tablet.apk
+
+      - name: Upload test-signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: zhujie-tablet-test-signed
+          path: android-tablet/build/zhujie-tablet.apk
+          if-no-files-found: error
