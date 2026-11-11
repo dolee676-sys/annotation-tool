@@ -67,6 +67,27 @@ public class OverlayPanel {
         selectionActive = active;
     }
 
+    /**
+     * 钉住 = 用户要把面板留着、自己在下面的应用里打字（如 OneNote 回车）。
+     * 钉住时给窗口加 FLAG_NOT_FOCUSABLE，避免面板抢走键盘焦点；取消钉住后
+     * 恢复可聚焦，追问输入框才能弹出键盘。
+     */
+    public void setPinned(boolean pinned) {
+        panelPinned = pinned;
+        if (panelParams == null || panelRoot == null || windowManager == null) {
+            return;
+        }
+        if (pinned) {
+            panelParams.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+        } else {
+            panelParams.flags &= ~WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+        }
+        try {
+            windowManager.updateViewLayout(panelRoot, panelParams);
+        } catch (Exception ignored) {
+        }
+    }
+
     public void show(String text, boolean ask, Rect bounds, boolean capture) {
         close();
         panelGeneration++;
@@ -137,7 +158,7 @@ public class OverlayPanel {
         });
         panelWeb.addJavascriptInterface(
                 new OverlayBridge(service, panelWeb, text, ask, this::close,
-                        this::move, pinned -> panelPinned = pinned,
+                        this::move, this::setPinned,
                         this::setSelectionActive),
                 "AndroidBridge");
         panelWeb.loadUrl(capture

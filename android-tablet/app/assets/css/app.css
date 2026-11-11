@@ -464,7 +464,25 @@ main { flex: 1; min-height: 0; position: relative; }
    朱砂只花在一处（开始阅读按钮），其余只用字型、字号和间距分层；
    模型 / 划词 / 版本 / 用量不再各占板块，收到底部一行小字，
    用量明细和模型配置都在记录 / 设置页里。全部规则只在 #view-home 内生效。 */
-.home { max-width: 680px; margin: 0 auto; padding: 44px 28px 72px; overflow-y: auto; height: 100%; }
+.home { max-width: 1000px; margin: 0 auto; padding: 40px 36px 72px; overflow-y: auto; height: 100%; }
+.home-grid { display: grid; grid-template-columns: minmax(300px, 380px) 1fr; gap: 52px; align-items: start; }
+.home-main { min-width: 0; }
+.home-side { min-width: 0; }
+.home-stats { display: flex; gap: 30px; margin-top: 34px; padding-top: 22px; border-top: 1px solid var(--hp-line); }
+.home-stat b { display: block; font-family: var(--serif); font-size: 24px; line-height: 1.2; color: var(--hp-ink); }
+.home-stat span { font-size: 11.5px; color: var(--hp-muted); }
+.home-rec { display: block; padding: 13px 0; border-bottom: 1px solid var(--hp-line); }
+.home-rec:last-child { border-bottom: 0; }
+.home-rec-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.home-rec-time { margin-left: auto; font-size: 11px; color: var(--hp-muted); }
+.home-rec-turn { font-size: 10px; color: var(--hp-muted); }
+.home-rec .rec-title { margin: 0; font-size: 14px; line-height: 1.5; -webkit-line-clamp: 2; }
+.home-empty { margin: 6px 0 0; color: var(--hp-muted); font-size: 13px; line-height: 1.9; }
+@media (max-width: 860px) {
+  .home { padding: 28px 20px 64px; }
+  .home-grid { grid-template-columns: 1fr; gap: 30px; }
+  .home-stats { margin-top: 24px; }
+}
 .home-hero { padding: 0 0 26px; }
 .home-date { margin: 0 0 8px; font-size: 12.5px; color: var(--hp-muted); }
 .home-hero h1 { font-family: var(--serif); font-size: 30px; font-weight: 600; margin: 0; letter-spacing: 0.01em; line-height: 1.3; color: var(--hp-ink); }

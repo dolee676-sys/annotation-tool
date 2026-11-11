@@ -73,15 +73,25 @@
     return '选中一段文字，点「注」，就能看到词义和语境。';
   }
 
-  /** 最近注解的一行：只有标题和时间，不贴徽标、不列 token 和花费。 */
+  /** 最近注解的一行：徽标 + 标题 + 时间（多轮会标出轮数）。 */
   function recentCard(record) {
+    var ask = record.mode === 'ask';
     var title = record.title
       || (record.question || record.text || '').replace(/\s+/g, ' ').trim().slice(0, 30)
       || '注解';
+    var turns = record.turns && record.turns.length > 1
+      ? '<span class="home-rec-turn">' + record.turns.length + ' 轮</span>' : '';
     return '<article class="rec-card home-rec" data-id="' + C.escapeHtml(record.id) + '">'
+      + '<div class="home-rec-top"><span class="badge' + (ask ? ' ask' : '') + '">'
+      + (ask ? '提问' : '注解') + '</span>' + turns
+      + '<span class="home-rec-time">' + C.escapeHtml(C.formatTime(record.ts)) + '</span></div>'
       + '<div class="rec-title">' + C.escapeHtml(title) + '</div>'
-      + '<div class="rec-time">' + C.escapeHtml(C.formatTime(record.ts)) + '</div>'
       + '</article>';
+  }
+
+  function statCell(value, label) {
+    return '<div class="home-stat"><b>' + C.escapeHtml(String(value)) + '</b><span>'
+      + C.escapeHtml(label) + '</span></div>';
   }
 
   /** 底部一行状态：写成一句小字，不占板块。 */
@@ -111,6 +121,8 @@
     } catch (ignored) {
     }
     var history = C.getHistory();
+    var favorites = C.getFavorites();
+    var usage = summarizeUsage(C.getUsage(), now.getTime());
     var update = window.ZJUpdate ? window.ZJUpdate.summary() : null;
     var currentVersion = '';
     try {
@@ -119,12 +131,15 @@
     }
 
     var hasReading = !!(history && history[0] && (history[0].text || history[0].question));
-    var recent = history.slice(0, 3);
-    var recentHtml = recent.length
-      ? '<section class="home-recent"><div class="home-section-head"><h2>最近注解</h2>'
-        + '<button class="home-link" data-action="goto-records">看全部记录</button></div>'
-        + '<div class="home-rec-list">' + recent.map(recentCard).join('') + '</div></section>'
-      : '';
+    var recent = history.slice(0, 4);
+    var recentHtml = '<section class="home-recent">'
+      + '<div class="home-section-head"><h2>最近注解</h2>'
+      + (recent.length ? '<button class="home-link" data-action="goto-records">看全部记录</button>' : '')
+      + '</div>'
+      + (recent.length
+        ? '<div class="home-rec-list">' + recent.map(recentCard).join('') + '</div>'
+        : '<p class="home-empty">还没有注解。在「阅读」里选中一段文字，点「注解」就会出现在这里。</p>')
+      + '</section>';
 
     var footAction = '';
     if (update && update.hasPackage) {
@@ -142,19 +157,25 @@
       : '<button class="home-link" data-action="goto-model">去设置</button>';
 
     var footLinks = [footSetup, footAction].filter(function (s) { return s; }).join(' ');
-    body.innerHTML = '<div class="home-hero">'
+    body.innerHTML = '<div class="home-grid">'
+      + '<div class="home-main">'
       + '<p class="home-date">' + (now.getMonth() + 1) + '月' + now.getDate() + '日 '
       + weekdayName(now.getDay()) + '</p>'
       + '<h1>' + greeting(now.getHours()) + '</h1>'
       + (hasReading
         ? '<p class="home-reading">' + C.escapeHtml(dailyLine(history)) + '</p>'
-        : '<p class="home-lede">还没有注解。去「阅读」粘贴一段文字，选中后点「注解」，'
-          + '第一条就会出现在这里。</p>')
-      + '</div>'
+        : '<p class="home-lede">选中一段文字，点「注」，就能看到词义和语境。</p>')
       + '<div class="home-actions">'
       + '<button class="home-primary" data-action="start-read">开始阅读</button>'
       + '</div>'
-      + recentHtml
+      + '<div class="home-stats">'
+      + statCell(usage.todayRequests, '今日注解')
+      + statCell(C.formatTokens(usage.totalTokens), '累计 tokens')
+      + statCell(favorites.length, '收藏')
+      + '</div>'
+      + '</div>'
+      + '<div class="home-side">' + recentHtml + '</div>'
+      + '</div>'
       + '<p class="home-foot">'
       + C.escapeHtml(statusLine(hasKey, C.modelLabel(model, provider.id), captureOn, update, currentVersion))
       + (footLinks ? ' ' + footLinks : '')
