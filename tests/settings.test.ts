@@ -96,6 +96,49 @@ test('百炼模型列表会删除不能文字对话的模型', () => {
   }
 })
 
+test('损坏的 providers（models 不是数组、条目不是对象、默认指向不存在的 id）加载时被清理、不丢整份设置', () => {
+  const dir = tempDir()
+  try {
+    const store = new SettingsStore(dir)
+    const file = join(dir, 'settings.json')
+    const raw = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
+    raw.providers = [
+      { id: 'ollama', name: 'Ollama', kind: 'ollama', baseUrl: 'http://127.0.0.1:11434', models: 'oops' },
+      null,
+      'not-an-object',
+      { id: 'deepseek', name: 'DeepSeek', kind: 'openai', baseUrl: 'https://api.deepseek.com/v1', models: ['a', 1, null] }
+    ]
+    raw.defaultProviderId = 'ghost'
+    raw.defaultModel = 'ghost-model'
+    writeFileSync(file, JSON.stringify(raw), 'utf8')
+
+    const reopened = new SettingsStore(dir)
+    assert.deepEqual(reopened.getProvider('ollama')?.models, [])
+    assert.deepEqual(reopened.getProvider('deepseek')?.models, ['a'])
+    // 悬空默认回到 ollama；默认服务商补齐后视图渲染也不会崩
+    assert.equal(reopened.get().defaultProviderId, 'ollama')
+    assert.equal(reopened.get().defaultModel, '')
+    assert.doesNotThrow(() => reopened.getProvidersView())
+    // 整份设置没被当成损坏备份丢掉
+    assert.equal(reopened.get().enabled, true)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('update() 不接受不存在的默认服务商 id', () => {
+  const dir = tempDir()
+  try {
+    const store = new SettingsStore(dir)
+    store.update({ defaultProviderId: 'no-such-provider' })
+    assert.equal(store.get().defaultProviderId, 'ollama')
+    store.update({ defaultProviderId: 'deepseek' })
+    assert.equal(store.get().defaultProviderId, 'deepseek')
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('设置中的 API Key 通过注入的加密器保存和读取', () => {
   const dir = tempDir()
   try {
