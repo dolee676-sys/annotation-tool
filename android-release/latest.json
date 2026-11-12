@@ -1,1 +1,8 @@
-{"notes":"首页改宽屏两栏（问候/开始阅读/统计 + 最近注解卡片）；钉住面板不再抢键盘焦点（OneNote 能正常回车）；复制请用面板内「复制」按钮。","sha256":"9b5c9a93ebdca5c26b8780b799be343009f7e263cb8e99f81b2ed2b0c55c8acf","size":268299,"url":"https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.43.apk","versionCode":1021,"versionName":"0.1.43"}
+{
+  "versionCode": 1022,
+  "versionName": "0.1.44",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.44.apk",
+  "sha256": "7ab2094c9ad1d12096d9a7fa6932cb07e92a4627f87ad6e04d2feeefd14c7918",
+  "size": 268299,
+  "notes": "在别的应用里选中文字时，补取它所在的整段作为上下文；悬浮面板结合上下文回答（不再只发选中几个字）。"
+}
