@@ -30,6 +30,7 @@ public class OverlayBridge {
     private final Context context;
     private final WebView web;
     private final String text;
+    private final String selectionContext;
     private final boolean askMode;
     private final Runnable closeAction;
     private final PanelMover mover;
@@ -37,12 +38,13 @@ public class OverlayBridge {
     private final SelectionAction selectionAction;
     private final Handler main = new Handler(Looper.getMainLooper());
 
-    public OverlayBridge(Context context, WebView web, String text, boolean askMode,
-                         Runnable closeAction, PanelMover mover, PinnedAction pinnedAction,
-                         SelectionAction selectionAction) {
+    public OverlayBridge(Context context, WebView web, String text, String selectionContext,
+                         boolean askMode, Runnable closeAction, PanelMover mover,
+                         PinnedAction pinnedAction, SelectionAction selectionAction) {
         this.context = context;
         this.web = web;
         this.text = text == null ? "" : text;
+        this.selectionContext = selectionContext == null ? "" : selectionContext;
         this.askMode = askMode;
         this.closeAction = closeAction;
         this.mover = mover;
@@ -56,6 +58,7 @@ public class OverlayBridge {
         try {
             out.put("mode", askMode ? "ask" : "annotate");
             out.put("text", text);
+            out.put("context", selectionContext);
         } catch (Exception ignored) {
         }
         return out.toString();

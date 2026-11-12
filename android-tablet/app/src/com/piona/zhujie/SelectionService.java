@@ -286,6 +286,7 @@ public class SelectionService extends AccessibilityService
         state.suppressChip = false;
         state.lastPanelText = "";
         state.setSelected(cleaned, bounds);
+        state.selectedContext = SelectionFinder.contextOf(source, cleaned);
         state.lastShownText = cleaned;
         state.lastShownBounds = bounds == null ? null : new Rect(bounds);
         chipOverlay.showDelayed(120);
@@ -426,6 +427,7 @@ public class SelectionService extends AccessibilityService
             state.suppressChip = false;
             state.lastPanelText = "";
             state.setSelected(hit.text, hit.bounds);
+            state.selectedContext = hit.context;
             state.lastShownText = hit.text;
             state.lastShownBounds = hit.bounds == null ? null : new Rect(hit.bounds);
             chipOverlay.showDelayed(90);
@@ -451,6 +453,7 @@ public class SelectionService extends AccessibilityService
             return;
         }
         state.setSelected(text, bounds);
+        state.selectedContext = "";
         state.dismissedText = "";
         state.dismissedBounds = null;
         state.suppressChip = false;
@@ -486,7 +489,7 @@ public class SelectionService extends AccessibilityService
         captureBubble.setVisible(false);
         String text = WindowTextCollector.collect(getRootInActiveWindow());
         if (text.length() >= 200 && text.split("\n").length >= 4) {
-            showOverlay(text, false, null, true);
+            showOverlay(text, "", false, null, true);
             return;
         }
         screenshotOcr.captureScreenAndOcr();
@@ -538,11 +541,11 @@ public class SelectionService extends AccessibilityService
         state.lastPanelText = text;
         state.suppressChip = true;
         chipOverlay.hide();
-        showOverlay(text, ask, bounds, false);
+        showOverlay(text, state.selectedContext, ask, bounds, false);
     }
 
-    void showOverlay(String text, boolean ask, Rect bounds, boolean capture) {
-        overlayPanel.show(text, ask, bounds, capture);
+    void showOverlay(String text, String context, boolean ask, Rect bounds, boolean capture) {
+        overlayPanel.show(text, context, ask, bounds, capture);
         captureBubble.setVisible(false);
     }
 
@@ -553,6 +556,7 @@ public class SelectionService extends AccessibilityService
         state.dismissedText = "";
         state.dismissedBounds = null;
         state.setSelected(text, bounds);
+        state.selectedContext = "";
         state.lastShownText = text;
         state.lastShownBounds = bounds == null ? null : new Rect(bounds);
         chipOverlay.show();
@@ -561,7 +565,7 @@ public class SelectionService extends AccessibilityService
 
     @Override
     public void onCaptureRecognized(String text) {
-        showOverlay(text, false, null, true);
+        showOverlay(text, "", false, null, true);
     }
 
     @Override

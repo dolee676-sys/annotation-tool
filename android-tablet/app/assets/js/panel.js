@@ -4,6 +4,7 @@
   var state = {
     mode: 'annotate',
     text: '',
+    context: '',
     turns: [],
     id: null,
     streaming: false,
@@ -153,6 +154,7 @@
     }
     state.mode = initData.mode === 'ask' ? 'ask' : 'annotate';
     state.text = String(initData.text || '').trim();
+    state.context = String(initData.context || '').trim();
     state.settings = C.getSettings();
 
     $('#icon').textContent = state.mode === 'ask' ? '问' : '注';
@@ -175,7 +177,8 @@
 
     $('#quote').textContent = state.text;
     $('#meta').innerHTML = '<span class="chip">选中 ' + state.text.length + ' 字</span>'
-      + '<span class="chip">来自其他应用</span>';
+      + (state.context ? '<span class="chip">上下文 ' + state.context.length + ' 字</span>'
+        : '<span class="chip">来自其他应用</span>');
 
     if (!C.keyOf(state.settings)) {
       showSetup();
@@ -228,7 +231,7 @@
     renderAnswer();
 
     var mode = question ? 'ask' : 'annotate';
-    var request = C.buildRequest(mode, state.text, '', state.question, state.turns, state.settings);
+    var request = C.buildRequest(mode, state.text, state.context, state.question, state.turns, state.settings);
     state.id = C.chat(request, {
       onDelta: function (piece) {
         state.answer += piece;

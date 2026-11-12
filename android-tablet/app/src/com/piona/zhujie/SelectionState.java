@@ -13,6 +13,8 @@ public final class SelectionState {
 
     public String selectedText = "";
     public Rect selectedBounds;
+    /** 选中所在的整段文字（给面板理解上下文用；可能为空）。 */
+    public String selectedContext = "";
     public String dismissedText = "";
     public boolean suppressChip;
     public String lastPanelText = "";
@@ -55,6 +57,7 @@ public final class SelectionState {
     public void clearSelection() {
         selectedText = "";
         selectedBounds = null;
+        selectedContext = "";
     }
 
     /**

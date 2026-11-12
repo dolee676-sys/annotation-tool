@@ -23,11 +23,57 @@ public final class SelectionFinder {
     public static final class Hit {
         public final String text;
         public final Rect bounds;
+        /** 选中所在的整段（节点全文，围绕选区截约 300 字），给面板做上下文。 */
+        public final String context;
 
         public Hit(String text, Rect bounds) {
+            this(text, bounds, "");
+        }
+
+        public Hit(String text, Rect bounds, String context) {
             this.text = text;
             this.bounds = bounds;
+            this.context = context == null ? "" : context;
         }
+    }
+
+    /** 选中文字所在的整段（节点全文，围绕选区截约 300 字）。 */
+    public static String contextOf(AccessibilityNodeInfo source, String selected) {
+        if (source == null) {
+            return "";
+        }
+        try {
+            if (source.isEditable()) {
+                return "";
+            }
+            CharSequence full = source.getText();
+            return contextFromText(full, full == null ? -1 : full.toString().indexOf(
+                    selected == null ? "" : selected.trim()), 0);
+        } catch (Exception exception) {
+            return "";
+        }
+    }
+
+    /** 把节点全文规整后围绕选区截约 300 字；center 是选区在全文中的起始下标（-1 未知）。 */
+    private static String contextFromText(CharSequence full, int center, int end) {
+        if (full == null) {
+            return "";
+        }
+        String value = full.toString().replace('\n', ' ').replace('\r', ' ').trim();
+        if (value.isEmpty()) {
+            return "";
+        }
+        int limit = 300;
+        if (value.length() <= limit) {
+            return value;
+        }
+        int c = center < 0 ? 0 : Math.min(center, value.length());
+        int from = Math.max(0, c - 120);
+        int to = Math.min(value.length(), from + limit);
+        if (to - from < limit) {
+            from = Math.max(0, to - limit);
+        }
+        return value.substring(from, to).trim();
     }
 
     /**
@@ -178,7 +224,7 @@ public final class SelectionFinder {
                             bounds = null;
                         }
                         recycleQueue(queue, root);
-                        return new Hit(value, bounds);
+                        return new Hit(value, bounds, contextFromText(text, start, stop));
                     }
                 }
                 int count = node.getChildCount();

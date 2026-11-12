@@ -88,7 +88,7 @@ public class OverlayPanel {
         }
     }
 
-    public void show(String text, boolean ask, Rect bounds, boolean capture) {
+    public void show(String text, String context, boolean ask, Rect bounds, boolean capture) {
         close();
         panelGeneration++;
         if (windowManager == null) {
@@ -157,7 +157,7 @@ public class OverlayPanel {
             return false;
         });
         panelWeb.addJavascriptInterface(
-                new OverlayBridge(service, panelWeb, text, ask, this::close,
+                new OverlayBridge(service, panelWeb, text, context, ask, this::close,
                         this::move, this::setPinned,
                         this::setSelectionActive),
                 "AndroidBridge");
