@@ -68,24 +68,12 @@ public class OverlayPanel {
     }
 
     /**
-     * 钉住 = 用户要把面板留着、自己在下面的应用里打字（如 OneNote 回车）。
-     * 钉住时给窗口加 FLAG_NOT_FOCUSABLE，避免面板抢走键盘焦点；取消钉住后
-     * 恢复可聚焦，追问输入框才能弹出键盘。
+     * 钉住只影响「点外部是否关闭」。焦点保持可聚焦——否则输入框收不到键盘，
+     * 追问就打不了字（曾因钉住加 FLAG_NOT_FOCUSABLE 导致输入失效）。
+     * 想在下层应用打字（如 OneNote 回车）时，先点一下下层应用让它拿回焦点。
      */
     public void setPinned(boolean pinned) {
         panelPinned = pinned;
-        if (panelParams == null || panelRoot == null || windowManager == null) {
-            return;
-        }
-        if (pinned) {
-            panelParams.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
-        } else {
-            panelParams.flags &= ~WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
-        }
-        try {
-            windowManager.updateViewLayout(panelRoot, panelParams);
-        } catch (Exception ignored) {
-        }
     }
 
     public void show(String text, String context, boolean ask, Rect bounds, boolean capture) {
