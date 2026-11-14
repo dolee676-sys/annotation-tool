@@ -1,8 +1,8 @@
 {
-  "versionCode": 1022,
-  "versionName": "0.1.44",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.44.apk",
-  "sha256": "7ab2094c9ad1d12096d9a7fa6932cb07e92a4627f87ad6e04d2feeefd14c7918",
+  "versionCode": 1023,
+  "versionName": "0.1.45",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.45.apk",
+  "sha256": "a379fc18bdf812053f4a2586ec432082624f82558a84142eb321fd166bf58dce",
   "size": 268299,
-  "notes": "在别的应用里选中文字时，补取它所在的整段作为上下文；悬浮面板结合上下文回答（不再只发选中几个字）。"
+  "notes": "修复：钉住后仍能在面板输入框正常打字追问（上版把钉住设成不可聚焦导致输入失效）。"
 }
