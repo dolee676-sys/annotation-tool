@@ -326,9 +326,57 @@ const EN: Record<string, string> = {
     'The app chooses the answer order for words, questions, and paragraphs; old prompts cannot change it. Click Reset to use the concise template, which keeps only your style preferences.',
   '套用模板': 'Use template',
   '系统提示词': 'System prompt',
+  '解释深度': 'Explanation depth',
+  '默认用于新的注解和提问': 'Default for new annotations and questions',
+  '增强模式会读取更大范围的上下文（需开启「结合上下文」），并按「结论 → 语境 → 背景 → 作用 → 易误点 → 文中依据」讲解；更慢，也更费 token。面板上可随时一键切换当前会话。':
+    'Deep mode reads a wider context (requires “With context”) and explains in six sections: conclusion → context → background → role → common misunderstanding → textual evidence. It is slower and uses more tokens. You can switch the current panel at any time.',
+  '简明': 'Brief',
+  '标准': 'Standard',
+  '增强': 'Deep',
+  '只给结论和关键解释，约 150 字。': 'Conclusion and key explanation only, about 150 characters.',
+  '词义 → 语境 → 作用，约 300 字。': 'Meaning → context → role, about 300 characters.',
+  '扩大上下文，六段式深解，约 500–800 字。':
+    'Wider context and a six-section deep explanation, about 500–800 characters.',
+  '关闭增强理解，回到标准': 'Turn off deep mode and return to standard',
+  '增强理解：扩大上下文，按六段式深解':
+    'Deep understanding: wider context and a six-section explanation',
+  '领域模式': 'Domain mode',
+  '编程模式的「增强」档使用内置六步教学模板：人话定义 → 生活化比喻（含边界）→ 痛点 → 反例/正例代码 → 底层真相 → 避坑；简明/标准档保持技术阅读结构。所有档位都要求模型不得编造 API、签名、默认值或版本行为。通用模式仍使用下方「系统提示词」。历史、科研后续加入。':
+    'The Deep depth of Programming mode uses a built-in six-step teaching template: plain-language definition → everyday analogy (with its boundary) → why it exists (pain) → bad/good code contrast → underlying truth → pitfalls. Brief/Standard keep the technical-reading structure. Every depth must not invent APIs, signatures, defaults, or version behavior. General mode still uses the System prompt below. History and research modes will follow.',
+  '通用': 'General',
+  '编程': 'Programming',
+  '普通文章、概念和日常阅读。': 'Ordinary prose, concepts, and everyday reading.',
+  '代码、API、报错、配置与技术文档。': 'Code, APIs, errors, configuration, and technical docs.',
+  '编程模式使用下方单独的「编程模式提示词」，不会叠加通用提示词；留空则回退到通用提示词。':
+    'Programming mode uses the separate Programming mode prompt below; it does not add the general prompt. Leave it blank to fall back to the general prompt.',
+  '使用下面独立的编程模式提示词。': 'Uses the separate programming-mode prompt below.',
+  '编程模式提示词': 'Programming mode prompt',
+  '仅在领域模式选「编程」时使用；这里写什么就发什么，应用只额外加选中/上下文的边界标记和安全前缀。留空则使用通用提示词。':
+    'Only used when the domain mode is Programming. Whatever you write here is sent as-is; the app only adds the selection/context boundary markers and a safety prefix. Leave blank to use the general prompt.',
+  '例如：你是一位资深技术专家。解释代码时按「结论 → 关键参数 → 运行机制 → 边界与坑 → 最小示例 → 怎么验证」回答；不得编造 API、签名、默认值或版本行为。':
+    'e.g. You are a senior technical expert. Explain code in this order: conclusion → key parameters → runtime mechanism → boundaries/pitfalls → minimal example → how to verify. Never invent APIs, signatures, defaults, or version behavior.',
+  '留空 = 使用通用提示词。': 'Leave blank = use the general prompt.',
+  '编程模式提示词已保存': 'Programming prompt saved',
+  '编程模式提示词已清空': 'Programming prompt cleared',
+  '清空': 'Clear',
+  '编程模式：使用你在设置里写的编程模式提示词':
+    'Programming mode: uses the programming prompt you wrote in Settings',
+  '技术栈备注（可选，用于判断版本相关行为）':
+    'Tech stack note (optional, for version-specific behavior)',
+  '例如：Java 21 + Spring Boot 3.4；Vue 3 + TypeScript 5':
+    'e.g. Java 21 + Spring Boot 3.4; Vue 3 + TypeScript 5',
+  '关闭编程模式，回到通用': 'Turn off programming mode and return to General',
+  '编程模式：按代码/API/报错/配置讲解，不编造 API 与版本行为':
+    'Programming mode: explain code/API/errors/config without inventing APIs or version behavior',
+  '本次回答仍被模型输出上限截断，建议换用输出上限更高的模型或降低深度。':
+    'This answer was still cut off by the model output limit. Use a model with a higher output limit or lower the depth.',
+  '本次回答未能自动补全六步结构，建议换用更强的模型或重新生成。':
+    'The six-step structure could not be completed automatically. Use a stronger model or regenerate.',
+  '请直接输出最终回答，不要只输出思考过程；内容较长时优先保证完整。':
+    'Return the final answer directly; do not output only your reasoning. If the answer is long, prioritize completeness.',
   '{count} 字': '{count} characters',
-  '建议保留“Markdown / 300 字以内”之类的约束，面板显示更稳定。':
-    'Keep constraints such as “Markdown / under 300 words” for more stable panel rendering.',
+  '建议保留 Markdown 约束；字数上限只影响简明/标准模式，「增强」会自动放开。':
+    'Keep Markdown constraints. The length cap applies to Brief/Standard; Deep relaxes it automatically.',
   '恢复默认': 'Reset to default',
   '开启后，点「注解 / 提问」时会读取选中位置前后各 {count} 字，把【选中】部分标出来后一起发给模型。只读取当前应用的无障碍文本，不截屏；取不到时自动只发选中文字。':
     'When enabled, Annotate / Ask reads about {count} characters around the selection and sends them with the selected part marked. It reads only the app’s accessibility text, never takes screenshots, and falls back to sending only the selection.',

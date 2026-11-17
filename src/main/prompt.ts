@@ -1,4 +1,10 @@
-import { DEFAULT_PROMPT, DEFAULT_PROMPT_EN, type PanelMode } from '../shared/types.ts'
+import {
+  DEFAULT_PROMPT,
+  DEFAULT_PROMPT_EN,
+  type AnswerDepth,
+  type DomainMode,
+  type PanelMode
+} from '../shared/types.ts'
 import type { Locale } from '../shared/i18n.ts'
 
 export type SelectionKind = 'word' | 'question' | 'paragraph'
@@ -22,6 +28,168 @@ const FOCUS_ASK_PREFIX = `用户的问题是主角。先直接回答用户的问
 const CONTEXT_ANNOTATE_PREFIX = `用户会提供选中文字所在的文章片段。上下文只用于理解【选中】部分，不要解释上下文中其他内容，也不要逐句复述上下文。\n\n`
 
 const CONTEXT_ASK_PREFIX = `文章片段只是回答问题的参考资料，不要逐句复述，也不要把回答写成对整段文章的注解。\n\n`
+
+const DEEP_ANNOTATE_PREFIX = `【增强模式 · 超强理解】
+本次目标不是只给词义，而是让读者真正读懂。忽略上文关于字数上限的要求；通常用 500–800 字讲清楚，不要为凑长度重复。
+先在内部判断：选中的是什么（词/短语、段落还是问题）、它在上下文中指什么、读者最可能缺哪块背景；只输出判断后的讲解，不要展示分析过程。
+按以下顺序输出，用 Markdown 小标题：
+**结论**：一句话说清它是什么；如果选中的是问题，第一句必须是答案；如果选中的是段落，先用一句话概括这段话。
+**在当前语境**：它在本文中具体指什么，和前后文如何衔接。
+**必要背景**：理解它需要的前置知识（概念、人物、制度、术语），只讲用得到的；术语第一次出现先解释。
+**作用与意图**：作者为什么在这里写它，它在论证、叙事或代码中起什么作用。
+**容易误解**：最容易理解错的一点，以及为什么。
+**文中依据**：引用上下文中支持以上判断的原句，用「」标出。上下文没有提供的，不要编造来源；直接写「文中未提供」。
+要求：先结论后展开；不确定的地方明确说明；不得虚构史料、论文、书籍、页码、学者观点，也不得声称查阅了没有提供的资料。`
+
+const DEEP_ASK_PREFIX = `【增强模式 · 超强理解】
+用户的问题是主角。忽略上文关于字数上限的要求；通常用 400–800 字回答，不要为凑长度重复。
+按以下顺序组织：
+**结论**：第一句直接回答问题。
+**依据**：用选中文字和上下文说明为什么；引用原句时用「」标出。
+**涉及的概念**：解释理解答案所必需的概念，只讲用得到的。
+**边界与例外**：适用条件、反例或容易混淆的情况。
+**不确定之处**：资料不足或存在争议的地方，明确说明；不得虚构来源。
+要求：先回答问题，不要把回答写成对选中文字的注解；上下文没提供的资料不要假装查过。`
+
+const BRIEF_ANNOTATE_PREFIX = `【简明模式】只给结论和最必要的一句解释，通常不超过 150 字；不展开背景、不举例，除非不举例就说不清。`
+
+const BRIEF_ASK_PREFIX = `【简明模式】第一句直接回答，随后最多补充两句关键依据；不展开背景，通常不超过 150 字。`
+
+const DEEP_ANNOTATE_PREFIX_EN = `[Deep mode · strong understanding]
+The goal is not a dictionary gloss but genuine comprehension. Ignore any length limit above; usually 500–800 words, without padding.
+Internally identify what the selection is (word/phrase, passage, or question), what it refers to here, and which background the reader most likely lacks. Output only the resulting explanation, not your analysis process.
+Use these Markdown sections in order:
+**Conclusion**: one sentence on what it is; if the selection is a question, the first sentence must be the answer; if it is a passage, summarize the passage first.
+**In this context**: what it specifically refers to here and how it connects to the surrounding text.
+**Background needed**: only the prerequisite concepts, people, institutions, or terms required to understand it; explain a term the first time it appears.
+**Role and intent**: why the author wrote it here and what it does in the argument, narrative, or code.
+**Common misunderstanding**: the most likely misreading and why.
+**Textual evidence**: quote the exact sentences from the provided context that support the explanation, in quotation marks. Never invent sources; if the context does not provide it, write "not provided in the text".
+Requirements: conclusion first; state uncertainty explicitly; never fabricate historical sources, papers, books, page numbers, or scholars' views, and never claim to have consulted material that was not provided.`
+
+const DEEP_ASK_PREFIX_EN = `[Deep mode · strong understanding]
+The user's question is the main task. Ignore any length limit above; usually 400–800 words, without padding.
+Organize the answer as:
+**Conclusion**: answer the question in the first sentence.
+**Evidence**: explain why using the selected text and context; quote exact sentences in quotation marks.
+**Concepts involved**: explain only the concepts needed to understand the answer.
+**Boundaries and exceptions**: applicable conditions, counterexamples, or common confusions.
+**Uncertainty**: clearly state where the material is insufficient or disputed; never invent sources.
+Requirements: answer the question first; do not turn it into an annotation of the selection; never pretend to have consulted material that was not provided.`
+
+const BRIEF_ANNOTATE_PREFIX_EN = `[Brief mode] Give the conclusion and at most one essential explanatory sentence, usually under 120 words; do not expand background or give examples unless the explanation is impossible without one.`
+
+const BRIEF_ASK_PREFIX_EN = `[Brief mode] Answer in the first sentence, then add at most two sentences of key evidence; no background expansion, usually under 120 words.`
+
+const PROGRAMMING_RULES_ZH = `准确性规则（优先级高于风格要求）：
+1. 只陈述能从选中内容、上下文、语言规范或框架公开行为中确认的事实；不确定就明确写「不确定」，并说明需要查什么。
+2. 不得编造 API 名称、函数签名、参数、默认值、版本行为、源码位置或文档链接。
+3. 区分语言标准库、框架、第三方库和项目自身代码；不要把项目里的封装说成框架官方能力。
+4. 版本相关行为必须注明适用版本；不知道用户版本时，说明可能因版本而异，并给出判断方法。
+5. 引用依据只使用上下文中真实出现的代码或文档原句，用「」标出；没有就写「上下文未提供」。
+6. 输出前自检：每个 API、参数、默认值和版本断言是否可确认？不能确认的改成「不确定」或删掉。`
+
+const PROGRAMMING_RULES_BRIEF_ZH = `不得编造 API 名称、签名、参数、默认值或版本行为；不确定就直说。`
+
+const PROGRAMMING_ANNOTATE_STANDARD_ZH = `【编程模式 · 技术阅读】
+上面的「词义 → 在当前语境 → 作用」和「概括 → 补充」只适用于普通文章；选中的是代码、API、报错、配置、命令或架构描述时，不要套用，按下面回答。
+先判断类型：代码/API、报错/异常、配置/命令、架构/设计、技术术语、普通文档段落。
+**结论**：一句话说清它做什么；报错则说最可能的根因。
+**关键点**：拆开最关键的 1–4 个参数、字段、调用链或执行步骤；不要逐行翻译。
+**运行机制**：它为什么这样工作，和前后代码如何配合。
+**边界与坑**：异常输入、并发、性能、兼容性或版本差异；没有明显风险就省略。
+**怎么验证**：给最小示例、测试方法或排查命令；不确定就说明验证思路。
+${PROGRAMMING_RULES_ZH}`
+
+const PROGRAMMING_ANNOTATE_DEEP_ZH = `【编程模式 · 资深技术专家深解】
+你现在是一位极其擅长教学的资深技术专家。用户选中了一个编程概念、代码、API、报错或配置。请把它讲透，拒绝官方套话、空话和逐行翻译。
+必须严格按照以下 6 个步骤输出，标题和顺序不可更改，不要增加第 7 部分；忽略上面的字数限制，通常用 800–1200 字。
+1. **一句话人话定义**：用最直白的大白话说明它是什么，最多两句话；如果选中的是一个问题，第一句必须先直接给答案。
+2. **生活化比喻**：用一个日常生活中的贴切例子比喻它；末尾必须写明这个比喻的「边界」——哪类场景会失效，防止我过度类推。
+3. **为什么需要它（痛点）**：如果没有它，程序员写代码时会遇到什么具体痛苦或灾难；给一个真实的工程场景。
+4. **代码对比（锚点）**：给出「反例代码（没有它时的惨状）」和「正例代码（有了它之后的优雅）」，用代码块，保持最小可运行；关键行加注释，并说明两者的实际差别。若选中的是报错或配置，用「错误写法 vs 正确写法」或「改前 vs 改后」。
+5. **底层真相（去魅）**：说明它在内存或运行时到底怎么工作：本质是什么数据结构、执行了什么动作、生命周期如何。必须区分「语言规范/公开契约」和「常见实现细节」；不确定的地方直接写「不确定」，不要编造源码细节。
+6. **避坑指南**：列出初学者最容易犯的 2 个错误，每个按「错误表现 → 原因 → 正确做法 → 怎么自测」说明。
+代码示例中的 API、参数和默认值必须真实；不确定就用通用伪代码并注明。仍然只有 6 个部分。
+${PROGRAMMING_RULES_ZH}`
+
+const PROGRAMMING_ANNOTATE_BRIEF_ZH = `【编程模式 · 简明】只给结论和最关键的 1–3 句（做什么、为什么、怎么验证）；不逐行解释；不要套用词义/概括模板。${PROGRAMMING_RULES_BRIEF_ZH}`
+
+const PROGRAMMING_ASK_STANDARD_ZH = `【编程模式 · 回答问题】
+用户的问题是主角。先直接回答，再给依据；不要把回答写成代码逐行注解。
+**结论**：第一句直接回答问题。
+**依据**：引用上下文中的代码或原句（用「」），说明为什么。
+**边界与例外**：适用版本、前置条件、反例或容易混淆的情况。
+**怎么验证**：最小示例、测试或排查命令；纯概念题可省略。
+${PROGRAMMING_RULES_ZH}`
+
+const PROGRAMMING_ASK_DEEP_ZH = `【编程模式 · 资深技术专家深解（回答问题）】
+用户的问题是主角。第一句必须直接回答问题；忽略上面的字数限制，通常用 800–1200 字。严格按照以下 6 个步骤输出，标题和顺序不可更改，不要增加第 7 部分。
+1. **一句话人话定义**：第一句直接回答问题；如果问题是「X 是什么」，用最直白的大白话说明它是什么，最多两句话。
+2. **生活化比喻**：用一个日常生活中的贴切例子比喻；末尾必须写明这个比喻的「边界」——哪类场景会失效。
+3. **为什么需要它（痛点）**：如果没有它会有什么具体痛苦；如果是排错题，说明问题为什么会发生，给一个真实工程场景。
+4. **代码对比（锚点）**：反例代码 vs 正例代码（或错误写法 vs 正确写法），用代码块，关键行加注释，并说明实际差别。
+5. **底层真相（去魅）**：它在内存或运行时怎么工作，或问题的根因；区分语言规范/公开契约与常见实现细节；不确定的地方直接写「不确定」，不要编造源码细节。
+6. **避坑指南**：2 个最容易犯的错误，按「错误表现 → 原因 → 正确做法 → 怎么自测」说明。
+代码示例中的 API、参数和默认值必须真实；不确定就用通用伪代码并注明。仍然只有 6 个部分。
+${PROGRAMMING_RULES_ZH}`
+
+const PROGRAMMING_ASK_BRIEF_ZH = `【编程模式 · 简明】第一句直接回答，随后最多两句关键依据；不展开背景，不写代码逐行注解。${PROGRAMMING_RULES_BRIEF_ZH}`
+
+const PROGRAMMING_RULES_EN = `Accuracy rules (higher priority than style):
+1. State only facts you can confirm from the selection, context, language specification, or documented framework behavior; if unsure, say "uncertain" and what needs checking.
+2. Never invent API names, function signatures, parameters, default values, version behavior, source locations, or documentation links.
+3. Distinguish the language standard library, framework, third-party libraries, and project code; never present project wrappers as official framework behavior.
+4. State the applicable version for version-dependent behavior; if the user's version is unknown, say it may differ and how to check.
+5. Quote only code or documentation sentences that actually appear in the context, in quotation marks; otherwise write "not provided in the text".
+6. Before answering, self-check every API, parameter, default, and version claim. Change anything you cannot confirm to "uncertain" or remove it.`
+
+const PROGRAMMING_RULES_BRIEF_EN = `Never invent API names, signatures, parameters, defaults, or version behavior; state uncertainty explicitly.`
+
+const PROGRAMMING_ANNOTATE_STANDARD_EN = `[Programming mode · technical reading]
+The "meaning → in this context → role" and "summary → context" templates above apply only to ordinary prose. If the selection is code, an API, an error, configuration, a command, or an architecture description, do not use them.
+First identify the type: code/API, error/exception, configuration/command, architecture/design, technical term, or ordinary documentation prose.
+**Conclusion**: one sentence on what it does; for an error, the most likely root cause.
+**Key points**: the 1–4 essential parameters, fields, call chain, or execution steps; do not translate line by line.
+**How it works**: why it behaves this way and how it fits the surrounding code.
+**Boundaries and pitfalls**: invalid input, concurrency, performance, compatibility, or version differences; omit if no material risk.
+**How to verify**: a minimal example, test method, or diagnostic command; if unsure, describe the verification approach.
+${PROGRAMMING_RULES_EN}`
+
+const PROGRAMMING_ANNOTATE_DEEP_EN = `[Programming mode · senior technical expert deep dive]
+You are a senior technical expert who is exceptionally good at teaching. Demystify the selected programming concept, code, API, error, or configuration; reject boilerplate, filler, and line-by-line translation.
+You must output exactly the following 6 steps, with these headings and order; do not add a seventh part. Ignore the word limit above; usually 800–1200 words.
+1. **Plain-language definition**: explain what it is in the plainest words, within two sentences; if the selection is a question, the first sentence must answer it directly.
+2. **Everyday analogy**: use a close everyday example; at the end, state the analogy's "boundary" — which cases break it, to prevent over-extrapolation.
+3. **Why it exists (pain)**: what concrete pain or disaster programmers face without it; give a real engineering scenario.
+4. **Code contrast (anchor)**: give "bad code (the mess without it)" and "good code (the elegance with it)" in code blocks, minimal and runnable; comment the key lines and explain the practical difference. For an error or config, use "wrong vs right" or "before vs after".
+5. **Underlying truth (demystified)**: explain how it actually works in memory or at runtime: what data structure it is, what actions are performed, what the lifecycle is. Distinguish the language specification/public contract from common implementation details; write "uncertain" where you are unsure, and never invent source details.
+6. **Pitfall guide**: list the 2 mistakes beginners make most, each as "symptom → cause → correct approach → how to self-test".
+APIs, parameters, and defaults in code examples must be real; if unsure, use generic pseudocode and say so. Still exactly 6 parts.
+${PROGRAMMING_RULES_EN}`
+
+const PROGRAMMING_ANNOTATE_BRIEF_EN = `[Programming mode · brief] Give the conclusion and the 1–3 essential sentences (what it does, why, how to verify); no line-by-line explanation and no word/paragraph template. ${PROGRAMMING_RULES_BRIEF_EN}`
+
+const PROGRAMMING_ASK_STANDARD_EN = `[Programming mode · answering]
+The user's question is the main task. Answer it first, then give the evidence; do not turn it into a line-by-line code annotation.
+**Conclusion**: answer the question in the first sentence.
+**Evidence**: quote the relevant code or sentences from the context in quotation marks and explain why.
+**Boundaries and exceptions**: applicable versions, preconditions, counterexamples, or common confusions.
+**How to verify**: a minimal example, test, or diagnostic command; omit for purely conceptual questions.
+${PROGRAMMING_RULES_EN}`
+
+const PROGRAMMING_ASK_DEEP_EN = `[Programming mode · senior technical expert deep dive (answering)]
+The user's question is the main task. The first sentence must answer it directly; ignore the word limit above, usually 800–1200 words. Output exactly the following 6 steps, with fixed headings and order; do not add a seventh part.
+1. **Plain-language definition**: the first sentence answers the question; for "what is X", explain it in the plainest words, within two sentences.
+2. **Everyday analogy**: a close everyday example; end by stating the analogy's "boundary" — which cases break it.
+3. **Why it exists (pain)**: the concrete pain without it; for debugging, why the problem happens, with a real engineering scenario.
+4. **Code contrast (anchor)**: bad vs good code (or wrong vs right) in code blocks; comment the key lines and explain the practical difference.
+5. **Underlying truth (demystified)**: how it works in memory/runtime, or the root cause; distinguish the specification/public contract from common implementation details; write "uncertain" where unsure and never invent source details.
+6. **Pitfall guide**: the 2 most common beginner mistakes as "symptom → cause → correct approach → how to self-test".
+APIs, parameters, and defaults in code examples must be real; if unsure, use generic pseudocode and say so. Still exactly 6 parts.
+${PROGRAMMING_RULES_EN}`
+
+const PROGRAMMING_ASK_BRIEF_EN = `[Programming mode · brief] Answer in the first sentence, then at most two sentences of key evidence; no background expansion and no line-by-line code annotation. ${PROGRAMMING_RULES_BRIEF_EN}`
 
 const ASK_SYSTEM_PROMPT_EN = `You are a rigorous reading assistant. The user selected a passage and asks a question. Your first task is to answer the user's question, not merely explain the selection. State the answer first, then give the necessary evidence. If the question goes beyond the provided material, you may add common knowledge and say so. Use Markdown and be concise; do not repeat the original passage.`
 
@@ -106,10 +274,227 @@ export function buildUserMessage(options: {
   context?: string
   contextChars: number
   turns?: Array<{ question?: string; answer: string }>
+  depth?: AnswerDepth
+  domain?: DomainMode
   locale?: Locale
 }): string {
   const locale = options.locale ?? 'zh-CN'
-  return locale === 'en-US' ? buildUserMessageEn(options) : buildUserMessageZh(options)
+  const base =
+    locale === 'en-US' ? buildUserMessageEn(options) : buildUserMessageZh(options)
+  return `${base}${domainUserSuffix(options.domain, options.depth, options.mode, locale)}`
+}
+
+export function buildCustomSystemPrompt(prompt: string, locale: Locale = 'zh-CN'): string {
+  const prefix = locale === 'en-US' ? SAFETY_PREFIX_EN : SAFETY_PREFIX
+  return `${prefix}${prompt.trim()}`
+}
+
+export function buildCustomUserMessage(options: {
+  mode: PanelMode
+  text: string
+  question?: string
+  context?: string
+  turns?: Array<{ question?: string; answer: string }>
+  locale?: Locale
+}): string {
+  const locale = options.locale ?? 'zh-CN'
+  return locale === 'en-US' ? customUserMessageEn(options) : customUserMessageZh(options)
+}
+
+function customUserMessageZh(options: {
+  mode: PanelMode
+  text: string
+  question?: string
+  context?: string
+  turns?: Array<{ question?: string; answer: string }>
+}): string {
+  const history = formatTurnsZh(options.turns)
+  const context = options.context
+    ? `\n\n【文章片段（仅供参考，不要逐句复述）】\n【上下文开始】\n${markSelection(options.text, options.context)}\n【上下文结束】`
+    : ''
+  if (options.mode === 'ask') {
+    return `【可参考的选中文字】\n【选中开始】\n${options.text}\n【选中结束】${history}${context}\n\n【用户当前的问题】\n${options.question}\n\n请严格按照系统提示词回答【用户当前的问题】。`
+  }
+  return `【选中的文字】\n【选中开始】\n${options.text}\n【选中结束】${context}\n\n请严格按照系统提示词处理【选中开始】中的内容。`
+}
+
+function customUserMessageEn(options: {
+  mode: PanelMode
+  text: string
+  question?: string
+  context?: string
+  turns?: Array<{ question?: string; answer: string }>
+}): string {
+  const history = formatTurnsEn(options.turns)
+  const context = options.context
+    ? `\n\n[Article context (reference only; do not repeat)]\n[CONTEXT START]\n${markSelection(options.text, options.context, 'en-US')}\n[CONTEXT END]`
+    : ''
+  if (options.mode === 'ask') {
+    return `[Selected text for reference]\n[SELECTED START]\n${options.text}\n[SELECTED END]${history}${context}\n\n[Current question]\n${options.question}\n\nFollow the system prompt exactly to answer [Current question].`
+  }
+  return `[Selected text]\n[SELECTED START]\n${options.text}\n[SELECTED END]${context}\n\nFollow the system prompt exactly to handle the selected content.`
+}
+
+function depthUserSuffix(
+  depth: AnswerDepth | undefined,
+  mode: PanelMode,
+  locale: Locale
+): string {
+  if (depth === 'deep') {
+    if (mode === 'ask') {
+      return locale === 'en-US'
+        ? '\n\n[This is Deep mode: answer fully with conclusion, evidence, concepts, boundaries, and uncertainty; do not apply the word cap above.]'
+        : '\n\n【本次为增强模式：按结论→依据→涉及概念→边界与例外→不确定之处的结构完整回答，不要套用上面的字数上限。】'
+    }
+    return locale === 'en-US'
+      ? '\n\n[This is Deep mode: answer fully in the six sections; do not apply the word cap above.]'
+      : '\n\n【本次为增强模式：按六段结构完整讲解，不要套用上面的字数上限。】'
+  }
+  if (depth === 'brief') {
+    return locale === 'en-US'
+      ? '\n\n[This is Brief mode: conclusion plus essential explanation only, within 120 words.]'
+      : '\n\n【本次为简明模式：只给结论和必要解释，控制在 150 字内。】'
+  }
+  return ''
+}
+
+function domainUserSuffix(
+  domain: DomainMode | undefined,
+  depth: AnswerDepth | undefined,
+  mode: PanelMode,
+  locale: Locale
+): string {
+  if (domain !== 'programming') return depthUserSuffix(depth, mode, locale)
+  if (locale === 'en-US') {
+    if (depth === 'deep') {
+      return mode === 'ask'
+        ? '\n\n[Programming mode: follow the 6-step teaching structure exactly; answer the question in the first sentence; do not apply the word cap above. Never invent APIs or version behavior.]'
+        : '\n\n[Programming mode: answer fully in the 6-step teaching structure (definition → analogy with boundary → pain → bad/good code → underlying truth → pitfalls); do not apply the word cap above; never invent APIs, signatures, defaults, or version behavior.]'
+    }
+    if (depth === 'brief') {
+      return mode === 'ask'
+        ? '\n\n[Programming mode: answer in the first sentence, then at most two sentences of key evidence; no six-step template. Never invent APIs or version behavior.]'
+        : '\n\n[Programming mode: conclusion and the key verification only; no six-step template; never invent APIs or version behavior.]'
+    }
+    return mode === 'ask'
+      ? '\n\n[Programming mode: answer directly first, then evidence, boundaries/exceptions, and how to verify. Do not turn code into line-by-line annotation.]'
+      : '\n\n[Programming mode: if the selection is code/API/error/config, answer with conclusion → key points → mechanism → boundaries → verification; do not translate line by line or use the word/paragraph template.]'
+  }
+  if (depth === 'deep') {
+    return mode === 'ask'
+      ? '\n\n【本次为编程增强模式：严格按 6 步教学结构回答，第一句直接回答问题；不要套用上面的字数上限；不得编造 API、签名、默认值或版本行为。】'
+      : '\n\n【本次为编程增强模式：严格按 6 步教学结构完整深解（人话定义→比喻含边界→痛点→反例/正例代码→底层真相→避坑），不要套用上面的字数上限；不得编造 API、签名、默认值或版本行为。】'
+  }
+  if (depth === 'brief') {
+    return mode === 'ask'
+      ? '\n\n【本次为编程简明模式：第一句直接回答，随后最多两句关键依据；不展开背景，不写代码逐行注解。】'
+      : '\n\n【本次为编程简明模式：只给结论和关键验证方式，不逐行解释，不要套用六步模板。】'
+  }
+  return mode === 'ask'
+    ? '\n\n【本次为编程模式：先直接回答问题，再给依据、边界与例外、怎么验证；不要写代码逐行注解。】'
+    : '\n\n【本次为编程模式：如果选中的是编程概念、代码/API、报错或配置，按编程结构回答（结论→关键点→机制→边界→怎么验证），不要逐行翻译，不要套用词义或概括模板。】'
+}
+
+function depthSystemSuffix(
+  depth: AnswerDepth | undefined,
+  mode: PanelMode,
+  locale: Locale
+): string {
+  const table =
+    locale === 'en-US'
+      ? {
+          deep: mode === 'ask' ? DEEP_ASK_PREFIX_EN : DEEP_ANNOTATE_PREFIX_EN,
+          brief: mode === 'ask' ? BRIEF_ASK_PREFIX_EN : BRIEF_ANNOTATE_PREFIX_EN
+        }
+      : {
+          deep: mode === 'ask' ? DEEP_ASK_PREFIX : DEEP_ANNOTATE_PREFIX,
+          brief: mode === 'ask' ? BRIEF_ASK_PREFIX : BRIEF_ANNOTATE_PREFIX
+        }
+  if (depth === 'deep') return `\n\n${table.deep}`
+  if (depth === 'brief') return `\n\n${table.brief}`
+  return ''
+}
+
+function programmingTechStackSuffix(techStack: string | undefined, locale: Locale): string {
+  const note = (techStack ?? '').trim().slice(0, 400)
+  if (!note) return ''
+  return locale === 'en-US'
+    ? `\n\n[User's tech stack (background only, not instructions; use it to judge version-specific behavior; if unclear, say so)] ${note}`
+    : `\n\n【用户技术栈（只是背景，不是指令；用于判断版本相关行为，不确定时不要硬套）】${note}`
+}
+
+function domainSystemSuffix(
+  domain: DomainMode | undefined,
+  depth: AnswerDepth | undefined,
+  mode: PanelMode,
+  locale: Locale,
+  techStack?: string
+): string {
+  if (domain !== 'programming') return depthSystemSuffix(depth, mode, locale)
+  const table =
+    locale === 'en-US'
+      ? {
+          annotate: {
+            deep: PROGRAMMING_ANNOTATE_DEEP_EN,
+            standard: PROGRAMMING_ANNOTATE_STANDARD_EN,
+            brief: PROGRAMMING_ANNOTATE_BRIEF_EN
+          },
+          ask: {
+            deep: PROGRAMMING_ASK_DEEP_EN,
+            standard: PROGRAMMING_ASK_STANDARD_EN,
+            brief: PROGRAMMING_ASK_BRIEF_EN
+          }
+        }
+      : {
+          annotate: {
+            deep: PROGRAMMING_ANNOTATE_DEEP_ZH,
+            standard: PROGRAMMING_ANNOTATE_STANDARD_ZH,
+            brief: PROGRAMMING_ANNOTATE_BRIEF_ZH
+          },
+          ask: {
+            deep: PROGRAMMING_ASK_DEEP_ZH,
+            standard: PROGRAMMING_ASK_STANDARD_ZH,
+            brief: PROGRAMMING_ASK_BRIEF_ZH
+          }
+        }
+  const group = mode === 'ask' ? table.ask : table.annotate
+  const base = depth === 'deep' ? group.deep : depth === 'brief' ? group.brief : group.standard
+  return `\n\n${base}${programmingTechStackSuffix(techStack, locale)}`
+}
+
+const SIX_STEP_REPAIR_ZH = `你上一次的回答没有完整遵守 6 步教学结构。请保留原回答中所有已确认的技术事实，只重新组织成严格的 6 个部分，不得新增事实，不得编造 API、签名、默认值或版本行为。标题和顺序必须是：
+1. **一句话人话定义**（如果问题是「X 是什么」，第一句直接回答）
+2. **生活化比喻**（末尾写明这个比喻的边界）
+3. **为什么需要它（痛点）**
+4. **代码对比（锚点）**（反例代码 vs 正例代码）
+5. **底层真相（去魅）**
+6. **避坑指南**（1–2 个，按「错误表现 → 原因 → 正确做法」）
+如果原回答缺少某一步所需的信息，就写「不确定」或「上下文未提供」，不要编造。如果上一次回答被截断，请根据原始问题和上下文补全缺失内容，不要只重复已输出的部分。只输出这 6 个部分，不要解释你在重排格式。`
+
+const SIX_STEP_REPAIR_EN = `Your previous answer did not fully follow the 6-step teaching structure. Keep every confirmed technical fact from the previous answer, and only reorganize it into exactly 6 parts. Do not add facts, and never invent APIs, signatures, defaults, or version behavior. The headings and order must be:
+1. **Plain-language definition** (if the question is "what is X", answer directly in the first sentence)
+2. **Everyday analogy** (state the analogy's boundary at the end)
+3. **Why it exists (pain)**
+4. **Code contrast (anchor)** (bad code vs good code)
+5. **Underlying truth (demystified)**
+6. **Pitfall guide** (1–2 mistakes as "symptom → cause → correct approach")
+If the previous answer lacks information for a step, write "uncertain" or "not provided in the text"; do not invent it. If the previous answer was truncated, complete the missing content from the original question and context; do not merely repeat what was already output. Output only these 6 parts and do not explain the reformatting.`
+
+export function buildSixStepRepairPrompt(locale: Locale): string {
+  return locale === 'en-US' ? SIX_STEP_REPAIR_EN : SIX_STEP_REPAIR_ZH
+}
+
+export function scoreProgrammingStructure(text: string): number {
+  const value = text ?? ''
+  const checks = [
+    /一句话人话定义|plain[- ]language definition/i,
+    /生活化比喻|everyday analogy/i,
+    /为什么需要|痛点|why it exists|\(pain\)/i,
+    /代码对比|code contrast/i,
+    /底层真相|underlying truth/i,
+    /避坑|pitfall/i
+  ]
+  return checks.reduce((score, pattern) => score + (pattern.test(value) ? 1 : 0), 0)
 }
 
 function buildUserMessageZh(options: {
@@ -266,19 +651,31 @@ export function buildSystemPrompt(options: {
   questionLike?: boolean
   selectionKind?: SelectionKind
   selectionText?: string
+  depth?: AnswerDepth
+  domain?: DomainMode
+  techStack?: string
   locale?: Locale
 }): string {
   const locale = options.locale ?? 'zh-CN'
+  const suffix = domainSystemSuffix(
+    options.domain,
+    options.depth,
+    options.mode,
+    locale,
+    options.techStack
+  )
   if (options.mode === 'ask') {
-    return locale === 'en-US'
-      ? SAFETY_PREFIX_EN +
+    return (
+      locale === 'en-US'
+        ? SAFETY_PREFIX_EN +
           FOCUS_ASK_PREFIX_EN +
           (options.hasContext ? CONTEXT_ASK_PREFIX_EN : '') +
           ASK_SYSTEM_PROMPT_EN
-      : SAFETY_PREFIX +
+        : SAFETY_PREFIX +
           FOCUS_ASK_PREFIX +
           (options.hasContext ? CONTEXT_ASK_PREFIX : '') +
           ASK_SYSTEM_PROMPT
+    ) + suffix
   }
 
   const kind =
@@ -307,7 +704,7 @@ export function buildSystemPrompt(options: {
       focus +
       (options.hasContext ? CONTEXT_ANNOTATE_PREFIX_EN : '') +
       prompt
-    )
+    ) + suffix
   }
 
   const focus =
@@ -328,5 +725,5 @@ export function buildSystemPrompt(options: {
     focus +
     (options.hasContext ? CONTEXT_ANNOTATE_PREFIX : '') +
     prompt
-  )
+  ) + suffix
 }

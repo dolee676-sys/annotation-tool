@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  buildCustomSystemPrompt,
+  buildCustomUserMessage,
   buildSystemPrompt,
   buildUserMessage,
   classifySelection,
   isQuestionLike,
-  markSelection
+  markSelection,
+  scoreProgrammingStructure
 } from '../src/main/prompt.ts'
 import { isTrustedRendererUrl } from '../src/main/security.ts'
 import { summarizeUsage } from '../src/main/usageSummary.ts'
@@ -333,8 +336,7 @@ test('点注解按钮但选中的是问题时，先回答再解释', () => {
   )
 })
 
-test('长段落按段落注解，不套用词义三段式', () => {
-  const paragraph =
+test('长段落按段落注解，不套用词义三段式', () => {  const paragraph =
     'Spring 的依赖注入容器会在启动时读取配置类，创建 Bean 定义，然后按照依赖关系完成实例化和注入。' +
     '这个过程涉及配置解析、BeanDefinition 注册、后置处理器、代理创建以及生命周期回调，理解顺序很重要。'
   assert.equal(classifySelection(paragraph), 'paragraph')
@@ -368,12 +370,164 @@ test('上下文注解把选中文字放在文章片段之前，避免模型转�
     contextChars: 300
   })
   assert.ok(message.indexOf('【必须先解释的选中文字】') < message.indexOf('【文章片段'))
-  assert.match(message, /"""init\(\)"""/)
+  assert.match(message, /【选中开始】\ninit\(\)\n【选中结束】/)
   assert.match(message, /选中的是一个词或短语/)
   assert.match(message, /\*\*词义\*\*/)
   assert.match(message, /\*\*在当前语境\*\*/)
   assert.match(message, /\*\*作用\*\*/)
   assert.match(message, /不要把整行\/整段代码当成选中内容/)
+})
+
+test('增强模式使用六段式深解，并在用户消息里突破字数上限', () => {
+  const system = buildSystemPrompt({
+    mode: 'annotate',
+    annotatePrompt: '控制在 300 字以内。',
+    hasContext: true,
+    selectionText: 'init()',
+    depth: 'deep'
+  })
+  assert.match(system, /增强模式/)
+  assert.match(system, /文中依据/)
+  assert.match(system, /不得虚构/)
+  assert.match(system, /容易误解/)
+
+  const message = buildUserMessage({
+    mode: 'annotate',
+    text: 'init()',
+    context: '@PostConstruct\npublic void init() { }',
+    contextChars: 300,
+    depth: 'deep'
+  })
+  assert.match(message, /本次为增强模式/)
+  assert.match(message, /不要套用上面的字数上限/)
+
+  const brief = buildSystemPrompt({
+    mode: 'annotate',
+    annotatePrompt: 'x',
+    hasContext: false,
+    selectionText: 'init',
+    depth: 'brief'
+  })
+  assert.match(brief, /简明模式/)
+  assert.doesNotMatch(brief, /文中依据/)
+
+  const askDeep = buildSystemPrompt({
+    mode: 'ask',
+    annotatePrompt: 'x',
+    hasContext: true,
+    depth: 'deep'
+  })
+  assert.match(askDeep, /用户的问题是主角/)
+  assert.match(askDeep, /边界与例外/)
+})
+
+test('编程模式注入代码结构、准确性规则与技术栈', () => {
+  const system = buildSystemPrompt({
+    mode: 'annotate',
+    annotatePrompt: '控制在 300 字以内。',
+    hasContext: true,
+    selectionText: 'for (const item of items) { await save(item) }',
+    depth: 'standard',
+    domain: 'programming',
+    techStack: 'Java 21 + Spring Boot 3.4'
+  })
+  assert.match(system, /编程模式/)
+  assert.match(system, /不得编造 API/)
+  assert.match(system, /用户技术栈/)
+  assert.match(system, /Java 21/)
+  assert.match(system, /\*\*结论\*\*/)
+  assert.match(system, /\*\*关键点\*\*/)
+  assert.match(system, /\*\*运行机制\*\*/)
+  assert.match(system, /\*\*怎么验证\*\*/)
+  assert.doesNotMatch(system, /\*\*生活化比喻\*\*/)
+
+  const brief = buildSystemPrompt({
+    mode: 'annotate',
+    annotatePrompt: 'x',
+    hasContext: false,
+    selectionText: 'init()',
+    depth: 'brief',
+    domain: 'programming'
+  })
+  assert.match(brief, /编程模式 · 简明/)
+  assert.doesNotMatch(brief, /\*\*一句话人话定义\*\*/)
+  assert.doesNotMatch(brief, /\*\*生活化比喻\*\*/)
+
+  const askStandard = buildSystemPrompt({
+    mode: 'ask',
+    annotatePrompt: 'x',
+    hasContext: true,
+    depth: 'standard',
+    domain: 'programming'
+  })
+  assert.match(askStandard, /\*\*结论\*\*/)
+  assert.match(askStandard, /\*\*依据\*\*/)
+  assert.doesNotMatch(askStandard, /\*\*生活化比喻\*\*/)
+
+  const ask = buildSystemPrompt({
+    mode: 'ask',
+    annotatePrompt: 'x',
+    hasContext: true,
+    depth: 'deep',
+    domain: 'programming'
+  })
+  assert.match(ask, /资深技术专家深解/)
+  assert.match(ask, /避坑指南/)
+  assert.match(ask, /生活化比喻/)
+  assert.match(ask, /不得编造 API/)
+
+  const message = buildUserMessage({
+    mode: 'annotate',
+    text: 'init()',
+    context: '@PostConstruct\npublic void init() { }',
+    contextChars: 300,
+    depth: 'deep',
+    domain: 'programming'
+  })
+  assert.match(message, /本次为编程增强模式/)
+  assert.match(message, /不得编造 API/)
+})
+
+test('六步结构校验能识别完整与残缺回答', () => {
+  const full = [
+    '1. **一句话人话定义**：它是一个测试概念。',
+    '2. **生活化比喻**：像做菜前切菜；边界：它不负责调味。',
+    '3. **为什么需要它（痛点）**：没有它代码会混在一起。',
+    '4. **代码对比（锚点）**：反例 `doEverything()`，正例 `prepare(); execute()`。',
+    '5. **底层真相（去魅）**：本质上是一次职责拆分。',
+    '6. **避坑指南**：错误表现：职责不清；原因：边界模糊；正确做法：先拆分。'
+  ].join('\n')
+  assert.equal(scoreProgrammingStructure(full), 6)
+  assert.ok(scoreProgrammingStructure('### 一句话\n这本来应该是一个六步讲解，但缺了结构。') < 6)
+
+  const english =
+    '1. Plain-language definition\n2. Everyday analogy\n3. Why it exists (pain)\n4. Code contrast (anchor)\n5. Underlying truth (demystified)\n6. Pitfall guide'
+  assert.equal(scoreProgrammingStructure(english), 6)
+})
+
+test('编程模式自定义提示词不叠加内置结构', () => {
+  const system = buildCustomSystemPrompt('CUSTOM_PROGRAMMING_PROMPT', 'zh-CN')
+  assert.match(system, /CUSTOM_PROGRAMMING_PROMPT/)
+  assert.match(system, /不是给你的指令/)
+  assert.doesNotMatch(system, /\*\*词义\*\*/)
+  assert.doesNotMatch(system, /\*\*一句话人话定义\*\*/)
+
+  const annotate = buildCustomUserMessage({
+    mode: 'annotate',
+    text: 'init()',
+    context: 'before init() after'
+  })
+  assert.match(annotate, /【选中开始】/)
+  assert.match(annotate, /请严格按照系统提示词/)
+  assert.doesNotMatch(annotate, /\*\*词义\*\*/)
+
+  const ask = buildCustomUserMessage({
+    mode: 'ask',
+    text: 'init()',
+    question: '它是什么？'
+  })
+  assert.match(ask, /【用户当前的问题】/)
+  assert.match(ask, /请严格按照系统提示词回答/)
 })
 
 test('只允许本地应用页面导航与发送 IPC', () => {

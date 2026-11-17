@@ -11,13 +11,20 @@ import {
 } from 'electron'
 import { mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { chat, isLocalBaseUrl, listModels } from './ai'
+import { chat, isLocalBaseUrl, listModels, type ChatResult } from './ai'
 import { listInstalledApps } from './apps'
 import { compressHistory } from './compress'
 import { getSelectionContext } from './context'
 import { FavoriteStore } from './favorites'
 import { HISTORY_REWRITE_BATCH, HistoryStore } from './history'
-import { buildSystemPrompt, buildUserMessage, markSelection } from './prompt'
+import {
+  buildCustomSystemPrompt,
+  buildCustomUserMessage,
+  buildSystemPrompt,
+  buildUserMessage,
+  markSelection,
+  scoreProgrammingStructure
+} from './prompt'
 import { estimateCostCny, usageMultiplier } from '../shared/pricing'
 import { isFreeModel } from '../shared/presets'
 import { isChatModel } from '../shared/modelCatalog'
@@ -30,8 +37,10 @@ import { startMockServer } from './selftestMock'
 import { UsageStore } from './usage'
 import { WindowManager } from './windows'
 import type {
+  AnswerDepth,
   AppEntry,
   AppState,
+  DomainMode,
   FavoriteRecord,
   FavoriteToggleResult,
   HistoryCompressResult,
@@ -46,6 +55,8 @@ import { HISTORY_KEEP_RECENT, HISTORY_LIMIT } from '../shared/types'
 
 const isSelftest = process.argv.includes('--selftest')
 const MAX_QUESTION_CHARS = 4000
+// 预取更大的窗口，面板上切到增强档时可以直接用，不必重新读取源应用。
+const DEEP_CONTEXT_CHARS = 900
 
 if (isSelftest) {
   const dir = join(app.getPath('temp'), 'zhujie-selftest')
@@ -101,15 +112,21 @@ interface ActiveAnnotation {
   conversationId: string
   question?: string
   context?: string
+  contextFull?: string
   text: string
   programName: string
   truncated: boolean
   providerId: string
   model: string
+  depth: AnswerDepth
+  baseDepth: AnswerDepth
+  domain: DomainMode
   runId: number
   started: boolean
   pending: boolean
   pinned: boolean
+  focusedOnce: boolean
+  panelOpenedAt: number
   contextPending: boolean
   turns: ConversationTurn[]
   lastQuestion?: string
@@ -234,6 +251,36 @@ function toScreenPoint(point: Point): Point {
   return point
 }
 
+// 增强档用完整窗口，其他档位裁回用户设置的「前后各 N 字」。
+function contextForDepth(
+  full: string,
+  selected: string,
+  depth: AnswerDepth,
+  baseChars: number
+): string {
+  if (depth === 'deep') return full
+  const needle = selected.trim()
+  if (!needle) return full.slice(0, Math.min(full.length, baseChars * 2 + 1200))
+  const center = full.length / 2
+  let best = -1
+  let bestDistance = Number.POSITIVE_INFINITY
+  let from = 0
+  while (from <= full.length) {
+    const index = full.indexOf(needle, from)
+    if (index < 0) break
+    const distance = Math.abs(index + needle.length / 2 - center)
+    if (distance < bestDistance) {
+      best = index
+      bestDistance = distance
+    }
+    from = index + Math.max(1, needle.length)
+  }
+  if (best < 0) return full.slice(0, Math.min(full.length, baseChars * 2 + 1200))
+  const start = Math.max(0, best - baseChars)
+  const end = Math.min(full.length, best + needle.length + baseChars)
+  return full.slice(start, end)
+}
+
 function debugSelection(data: Record<string, unknown>): void {
   if (process.env.ZHUJIE_DEBUG_SELECTION !== '1') return
   try {
@@ -331,6 +378,8 @@ function panelResetPayload(
     providerId: a.providerId,
     providerName,
     model: a.model,
+    depth: a.depth,
+    domain: a.domain,
     localOnly: settings.get().localOnly
   }
 }
@@ -343,6 +392,8 @@ async function runAnnotationRequest(
     historyMode: PanelMode
     followUp: boolean
     question?: string
+    repairPrompt?: string
+    locale?: Locale
   }
 ): Promise<void> {
   if (activeAnnotation !== a || a.pending) return
@@ -384,27 +435,154 @@ async function runAnnotationRequest(
 
   const startedAt = Date.now()
   const apiKey = settings.apiKey(provider.id)
+  const depth = a.depth
+  const domain = a.domain
+  const maxTokens =
+    domain === 'programming'
+      ? depth === 'deep'
+        ? 3200
+        : depth === 'brief'
+          ? 600
+          : 1200
+      : depth === 'deep'
+        ? 1400
+        : depth === 'brief'
+          ? 350
+          : 700
+  const numCtx = domain === 'programming' || depth === 'deep' ? 8192 : undefined
+  const timeoutMs =
+    domain === 'programming'
+      ? depth === 'deep'
+        ? 300_000
+        : 180_000
+      : depth === 'deep'
+        ? 180_000
+        : 120_000
   try {
-    const result = await chat({
-      provider,
-      apiKey,
-      model: a.model,
-      system: options.system,
-      user: options.user,
-      signal: controller.signal,
-      onDelta: (chunk) => {
-        if (activeAnnotation === a && runId === a.runId) {
-          windows.sendPanel('panel:delta', { chunk })
+    let result: ChatResult
+    let firstStreamed = false
+    try {
+      result = await chat({
+        provider,
+        apiKey,
+        model: a.model,
+        system: options.system,
+        user: options.user,
+        signal: controller.signal,
+        maxTokens,
+        temperature: 0.2,
+        numCtx,
+        timeoutMs,
+        onDelta: (chunk) => {
+          firstStreamed = true
+          if (activeAnnotation === a && runId === a.runId) {
+            windows.sendPanel('panel:delta', { chunk })
+          }
         }
-      }
-    })
+      })
+    } catch (firstError) {
+      if (controller.signal.aborted) throw firstError
+      const firstMessage = firstError instanceof Error ? firstError.message : String(firstError)
+      const retryable =
+        /输出额度|思考过程|没有返回可显示的内容|finish_reason=length|done_reason=length/i.test(
+          firstMessage
+        )
+      if (!retryable) throw firstError
+      if (isSelftest) console.log('[selftest] retrying empty/length answer')
+      if (firstStreamed) windows.sendPanel('panel:replace', { text: '' })
+      result = await chat({
+        provider,
+        apiKey,
+        model: a.model,
+        system: options.system,
+        user: `${options.user}\n\n${translate(
+          options.locale ?? uiLocale(),
+          '请直接输出最终回答，不要只输出思考过程；内容较长时优先保证完整。'
+        )}`,
+        signal: controller.signal,
+        maxTokens: Math.min(6000, Math.max(maxTokens * 2, depth === 'deep' ? 5000 : 3500)),
+        temperature: 0.2,
+        numCtx,
+        timeoutMs: Math.max(timeoutMs, 180_000),
+        onDelta: (chunk) => {
+          if (activeAnnotation === a && runId === a.runId) {
+            windows.sendPanel('panel:delta', { chunk })
+          }
+        }
+      })
+    }
     if (activeAnnotation !== a || runId !== a.runId) return
+
+    let finalText = result.text
+    let promptTokens = result.promptTokens
+    let completionTokens = result.completionTokens
+    let totalTokens = result.totalTokens
+    let estimated = result.estimated
+    let repairApplied = false
+    let truncated = result.finishReason === 'length'
+    const beforeScore = scoreProgrammingStructure(finalText)
+    if (domain === 'programming' && depth === 'deep' && options.repairPrompt && (truncated || beforeScore < 6)) {
+      const repairMaxTokens = Math.min(
+        6000,
+        Math.max(maxTokens * 2, depth === 'deep' ? 5000 : 3500)
+      )
+      try {
+        const repair = await chat({
+          provider,
+          apiKey,
+          model: a.model,
+          system: `${options.system}\n\n${options.repairPrompt}`,
+          user: `${options.user}\n\n[PREVIOUS ANSWER]\n${finalText}`,
+          signal: controller.signal,
+          onDelta: () => undefined,
+          maxTokens: repairMaxTokens,
+          temperature: 0.2,
+          numCtx,
+          timeoutMs: Math.max(timeoutMs, 180_000)
+        })
+        promptTokens += repair.promptTokens
+        completionTokens += repair.completionTokens
+        totalTokens += repair.totalTokens
+        estimated = estimated || repair.estimated
+        const afterScore = scoreProgrammingStructure(repair.text)
+        const repairComplete = repair.finishReason !== 'length'
+        const shouldUseRepair =
+          (repairComplete && (afterScore >= beforeScore || afterScore === 6)) ||
+          (truncated &&
+            (afterScore > beforeScore ||
+              (afterScore === beforeScore && repair.text.length > finalText.length)))
+        if (shouldUseRepair) {
+          finalText = repair.text
+          repairApplied = true
+          truncated = repair.finishReason === 'length'
+        }
+      } catch (repairError) {
+        if (controller.signal.aborted || activeAnnotation !== a || runId !== a.runId) return
+        if (isSelftest) console.log('[selftest] repair failed', repairError)
+      }
+    }
+    let note = ''
+    if (truncated) {
+      note = `\n\n> ${translate(
+        options.locale ?? uiLocale(),
+        '本次回答仍被模型输出上限截断，建议换用输出上限更高的模型或降低深度。'
+      )}`
+    } else if (domain === 'programming' && depth === 'deep' && !repairApplied && beforeScore < 6) {
+      note = `\n\n> ${translate(
+        options.locale ?? uiLocale(),
+        '本次回答未能自动补全六步结构，建议换用更强的模型或重新生成。'
+      )}`
+    }
+    if (note) finalText += note
+    if (activeAnnotation !== a || runId !== a.runId) return
+    if (repairApplied || note) windows.sendPanel('panel:replace', { text: finalText })
+
     a.pending = false
     const latencyMs = Date.now() - startedAt
     const cost = estimateCostCny({
       model: a.model,
-      promptTokens: result.promptTokens,
-      completionTokens: result.completionTokens,
+      promptTokens,
+      completionTokens,
       local: isLocalBaseUrl(provider.baseUrl),
       fallbackIn: provider.priceIn,
       fallbackOut: provider.priceOut,
@@ -414,10 +592,10 @@ async function runAnnotationRequest(
     a.turns.push({
       id: recordId,
       question: options.historyMode === 'ask' ? options.question : undefined,
-      answer: result.text,
+      answer: finalText,
       providerName: provider.name,
       model: a.model,
-      totalTokens: result.totalTokens,
+      totalTokens,
       cost
     })
     if (a.turns.length > 6) a.turns = a.turns.slice(-6)
@@ -431,10 +609,10 @@ async function runAnnotationRequest(
       model: a.model,
       chars: a.text.length,
       contextChars: a.context?.length ?? 0,
-      promptTokens: result.promptTokens,
-      completionTokens: result.completionTokens,
-      totalTokens: result.totalTokens,
-      estimated: result.estimated,
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      estimated,
       cost,
       latencyMs,
       ok: true
@@ -450,9 +628,11 @@ async function runAnnotationRequest(
         model: a.model,
         text: a.text,
         question: options.question,
-        answer: result.text,
+        answer: finalText,
         contextChars: a.context?.length ?? 0,
-        totalTokens: result.totalTokens,
+        depth,
+        domain,
+        totalTokens,
         cost,
         ok: true
       })
@@ -460,15 +640,15 @@ async function runAnnotationRequest(
     }
     windows.sendPanel('panel:done', {
       usage: {
-        promptTokens: result.promptTokens,
-        completionTokens: result.completionTokens,
-        totalTokens: result.totalTokens,
-        estimated: result.estimated
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        estimated
       },
       cost,
       latencyMs
     })
-    if (isSelftest) console.log('[selftest] panel:done', result.totalTokens)
+    if (isSelftest) console.log('[selftest] panel:done', totalTokens)
     windows.settings?.webContents.send('usage:changed')
     selftestResolve?.()
     selftestResolve = null
@@ -513,24 +693,37 @@ async function startAnnotation(): Promise<void> {
   if (!a || a.mode === 'ask') return
   const s = settings.get()
   const answerLocale = resolveAnswerLocale(s.answerLanguage, uiLocale())
+  const customPrompt = a.domain === 'programming' ? s.programmingPrompt.trim() : ''
   a.turns = []
   await runAnnotationRequest(a, {
-    system: buildSystemPrompt({
-      mode: 'annotate',
-      annotatePrompt: s.prompt,
-      hasContext: Boolean(a.context),
-      selectionText: a.text,
-      locale: answerLocale
-    }),
-    user: buildUserMessage({
-      mode: 'annotate',
-      text: a.text,
-      context: a.context,
-      contextChars: s.contextChars,
-      locale: answerLocale
-    }),
+    system: customPrompt
+      ? buildCustomSystemPrompt(customPrompt, answerLocale)
+      : buildSystemPrompt({
+          mode: 'annotate',
+          annotatePrompt: s.prompt,
+          hasContext: Boolean(a.context),
+          selectionText: a.text,
+          depth: a.depth,
+          locale: answerLocale
+        }),
+    user: customPrompt
+      ? buildCustomUserMessage({
+          mode: 'annotate',
+          text: a.text,
+          context: a.context,
+          locale: answerLocale
+        })
+      : buildUserMessage({
+          mode: 'annotate',
+          text: a.text,
+          context: a.context,
+          contextChars: s.contextChars,
+          depth: a.depth,
+          locale: answerLocale
+        }),
     historyMode: 'annotate',
-    followUp: false
+    followUp: false,
+    locale: answerLocale
   })
 }
 
@@ -541,26 +734,41 @@ async function askPanelQuestion(question: string): Promise<boolean> {
   if (!q || a.pending) return false
   const s = settings.get()
   const answerLocale = resolveAnswerLocale(s.answerLanguage, uiLocale())
+  const customPrompt = a.domain === 'programming' ? s.programmingPrompt.trim() : ''
   a.lastQuestion = q
   await runAnnotationRequest(a, {
-    system: buildSystemPrompt({
-      mode: 'ask',
-      annotatePrompt: s.prompt,
-      hasContext: Boolean(a.context),
-      locale: answerLocale
-    }),
-    user: buildUserMessage({
-      mode: 'ask',
-      text: a.text,
-      question: q,
-      context: a.context,
-      contextChars: s.contextChars,
-      turns: a.turns.slice(-4),
-      locale: answerLocale
-    }),
+    system: customPrompt
+      ? buildCustomSystemPrompt(customPrompt, answerLocale)
+      : buildSystemPrompt({
+          mode: 'ask',
+          annotatePrompt: s.prompt,
+          hasContext: Boolean(a.context),
+          depth: a.depth,
+          locale: answerLocale
+        }),
+    user: customPrompt
+      ? buildCustomUserMessage({
+          mode: 'ask',
+          text: a.text,
+          question: q,
+          context: a.context,
+          turns: a.turns.slice(-4),
+          locale: answerLocale
+        })
+      : buildUserMessage({
+          mode: 'ask',
+          text: a.text,
+          question: q,
+          context: a.context,
+          contextChars: s.contextChars,
+          turns: a.turns.slice(-4),
+          depth: a.depth,
+          locale: answerLocale
+        }),
     historyMode: 'ask',
     followUp: true,
-    question: q
+    question: q,
+    locale: answerLocale
   })
   return true
 }
@@ -593,6 +801,8 @@ function togglePanelFavorite(): FavoriteToggleResult {
     question: turn.question,
     answer: turn.answer,
     contextChars: a.context?.length ?? 0,
+    depth: a.depth,
+    domain: a.domain,
     totalTokens: turn.totalTokens,
     cost: turn.cost
   }
@@ -656,11 +866,12 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
   const contextEligible = s.useContext && selectedForContext.length >= 1
   // 不再缓存失败：之前一次失败会压制 2 分钟内所有尝试，导致看起来“总是读不到”。
   const shouldTryContext = contextEligible
+  const fetchChars = Math.min(1000, Math.max(s.contextChars, DEEP_CONTEXT_CHARS))
 
   // 先启动 PowerShell 抓上下文，同时把面板显示出来；面板用 showInactive 出现，
   // 不会抢走源应用焦点，因此 UIA 仍能读取原来的选区。
   const contextPromise = shouldTryContext
-    ? getSelectionContext(s.contextChars, sel.text, toScreenPoint(sel.contextPoint))
+    ? getSelectionContext(fetchChars, sel.text, toScreenPoint(sel.contextPoint))
     : null
   activeAnnotation?.controller?.abort()
 
@@ -668,15 +879,21 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
     mode,
     conversationId: history.newId(),
     context: undefined,
+    contextFull: undefined,
     text: sel.text,
     programName: sel.programName,
     truncated: sel.truncated,
     providerId: provider.id,
     model,
+    depth: s.answerDepth,
+    baseDepth: s.answerDepth === 'deep' ? 'standard' : s.answerDepth,
+    domain: s.domainMode,
     runId: 0,
     started: false,
     pending: false,
     pinned: false,
+    focusedOnce: false,
+    panelOpenedAt: Date.now(),
     contextPending: Boolean(contextPromise),
     turns: [],
     controller: null
@@ -692,6 +909,8 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
     providerName: provider.name,
     model,
     options: buildModelOptions(provider.id, model),
+    depth: s.answerDepth,
+    domain: s.domainMode,
     localOnly: s.localOnly,
     contextChars: 0,
     contextEnabled: contextEligible,
@@ -713,7 +932,10 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
   })
   hideChip()
 
-  if (!contextPromise) return
+  if (!contextPromise) {
+    annotation.focusedOnce = true
+    return
+  }
 
   const result = await contextPromise.catch((error) => ({
     ok: false as const,
@@ -743,17 +965,21 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
     )
   }
 
+  annotation.contextFull = context
   annotation.context = context
+    ? contextForDepth(context, annotation.text, annotation.depth, settings.get().contextChars)
+    : undefined
   annotation.contextPending = false
   // 上下文读取完成后不再需要保持“非激活”状态，主动把面板提到前台并聚焦。
   // 全屏应用下窗口层级和焦点都可能被源应用压住，这一步是注解/提问可用的关键。
   windows.bringPanelToFront()
   windows.focusPanel()
+  annotation.focusedOnce = true
   setTimeout(() => {
     if (activeAnnotation === annotation) windows.focusPanel()
   }, 200)
   const contextPayload = {
-    contextChars: context?.length ?? 0,
+    contextChars: annotation.context?.length ?? 0,
     contextEnabled: contextEligible,
     contextPending: false
   }
@@ -785,6 +1011,60 @@ function switchPanelModel(providerId: string, model: string): boolean {
     return true
   }
   windows.sendPanel('panel:reset', panelResetPayload(a, provider.name))
+  return true
+}
+
+function setPanelDepth(depth: AnswerDepth): boolean {
+  const a = activeAnnotation
+  if (!a || a.pending) return false
+  if (depth !== 'brief' && depth !== 'standard' && depth !== 'deep') return false
+  if (depth === 'deep') {
+    if (a.depth !== 'deep') a.baseDepth = a.depth
+    a.depth = 'deep'
+  } else {
+    a.depth = depth
+    a.baseDepth = depth
+  }
+  a.controller?.abort()
+  if (a.contextFull) {
+    a.context = contextForDepth(a.contextFull, a.text, a.depth, settings.get().contextChars)
+  }
+  const s = settings.get()
+  windows.sendPanel('panel:depth', { depth: a.depth })
+  windows.sendPanel('panel:context', {
+    contextChars: a.context?.length ?? 0,
+    contextEnabled: s.useContext,
+    contextPending: a.contextPending
+  })
+  if (pendingPanelInit) {
+    pendingPanelInit.depth = a.depth
+    pendingPanelInit.contextChars = a.context?.length ?? 0
+    pendingPanelInit.contextPending = a.contextPending
+  }
+  if (a.mode === 'annotate' && !a.contextPending) {
+    void startAnnotation()
+  } else if (a.mode === 'ask' && !a.contextPending && a.lastQuestion) {
+    void askPanelQuestion(a.lastQuestion)
+  }
+  return true
+}
+
+function setPanelDomain(domain: DomainMode): boolean {
+  const a = activeAnnotation
+  if (!a || a.pending) return false
+  if (domain !== 'general' && domain !== 'programming') return false
+  if (a.domain === domain) return true
+  a.domain = domain
+  a.controller?.abort()
+  settings.update({ domainMode: domain })
+  broadcastState()
+  windows.sendPanel('panel:domain', { domain })
+  if (pendingPanelInit) pendingPanelInit.domain = domain
+  if (a.mode === 'annotate' && !a.contextPending) {
+    void startAnnotation()
+  } else if (a.mode === 'ask' && !a.contextPending && a.lastQuestion) {
+    void askPanelQuestion(a.lastQuestion)
+  }
   return true
 }
 
@@ -1023,6 +1303,8 @@ function registerIpc(): void {
       question: record.question,
       answer: record.answer,
       contextChars: record.contextChars,
+      depth: record.depth,
+      domain: record.domain,
       totalTokens: record.totalTokens,
       cost: record.cost
     }
@@ -1190,6 +1472,9 @@ function registerIpc(): void {
     return true
   })
 
+  handle('panel:set-depth', (_event, depth: AnswerDepth) => setPanelDepth(depth))
+  handle('panel:set-domain', (_event, domain: DomainMode) => setPanelDomain(domain))
+
   handle('panel:ask', async (_event, question: string) =>
     askPanelQuestion(String(question ?? ''))
   )
@@ -1308,7 +1593,9 @@ function startServices(): void {
         !panel.isDestroyed() &&
         panel.isVisible() &&
         activeAnnotation &&
-        !activeAnnotation.pinned
+        !activeAnnotation.pinned &&
+        activeAnnotation.focusedOnce &&
+        Date.now() - activeAnnotation.panelOpenedAt > 600
       ) {
         const bounds = panel.getBounds()
         const inside =
@@ -1320,6 +1607,8 @@ function startServices(): void {
           setTimeout(() => {
             const current = windows.panel
             if (!current || current.isDestroyed() || !activeAnnotation || activeAnnotation.pinned) return
+            if (!activeAnnotation.focusedOnce) return
+            if (Date.now() - activeAnnotation.panelOpenedAt <= 600) return
             if (BrowserWindow.getFocusedWindow() !== current) {
               activeAnnotation.controller?.abort()
               windows.closePanel()
@@ -1364,8 +1653,10 @@ app.whenReady().then(() => {
   if (isSelftest) {
     void runSelfTest()
   } else {
-    const silentStart = process.argv.includes('--hidden')
-    if (!silentStart) windows.openSettings()
+    const explicitSettings = process.argv.includes('--show-settings')
+    const needsSetup = !settings.get().defaultModel
+    const autoOpen = !process.argv.includes('--hidden') && needsSetup
+    if (explicitSettings || autoOpen) windows.openSettings()
     setTimeout(() => void refreshLocalModels(), 800)
     if (settings.get().checkUpdatesOnStartup && updater.getStatus().phase !== 'error') {
       setTimeout(() => void updater.check(), 6000)
@@ -1659,6 +1950,13 @@ async function runSelfTest(): Promise<void> {
       await captureWindow(windows.settings, join(outDir, 'provider-guide.png'))
     }
     await clickNav(2)
+    await new Promise((r) => setTimeout(r, 600))
+    if (settingsContents) {
+      await settingsContents.executeJavaScript(
+        "document.querySelector('.depth-options')?.scrollIntoView({block:'center'})"
+      )
+      await new Promise((r) => setTimeout(r, 400))
+    }
     await captureWindow(windows.settings, join(outDir, 'prompt.png'))
     await clickNav(3)
     if (settingsContents) {
@@ -1817,6 +2115,46 @@ async function runSelfTest(): Promise<void> {
 
     windows.settings?.hide()
     await new Promise((r) => setTimeout(r, 250))
+
+    settings.update({ answerDepth: 'standard' })
+    handleSelection({
+      text: '注意力权重会随上下文变化。',
+      programName: '自测阅读器',
+      startTop: { x: 300, y: 300 },
+      startBottom: { x: 300, y: 330 },
+      endTop: { x: 700, y: 300 },
+      endBottom: { x: 700, y: 330 },
+      mousePosEnd: { x: 700, y: 330 },
+      posLevel: 3
+    })
+    await new Promise((r) => setTimeout(r, 500))
+    const depthChip = windows.chip
+    if (!depthChip) throw new Error('增强模式测试小框未创建')
+    const depthFirstDone = waitForPanelDone()
+    depthChip.webContents.sendInputEvent({ type: 'mouseDown', x: 29, y: 22, button: 'left', clickCount: 1 })
+    depthChip.webContents.sendInputEvent({ type: 'mouseUp', x: 29, y: 22, button: 'left', clickCount: 1 })
+    await depthFirstDone
+    const depthSecondDone = waitForPanelDone()
+    const depthAccepted = await windows.panel?.webContents.executeJavaScript(
+      "window.zhujie.panelSetDepth('deep')"
+    )
+    if (!depthAccepted) throw new Error('增强模式切换未被接受')
+    await depthSecondDone
+    await new Promise((r) => setTimeout(r, 300))
+    const depthUi = await windows.panel?.webContents.executeJavaScript(
+      "(() => ({ active: Boolean(document.querySelector('.icon-btn.depth.active')), badge: Array.from(document.querySelectorAll('.depth-badge')).map((el) => el.textContent || '').join('') }))()"
+    )
+    if (!depthUi?.active || !String(depthUi.badge).includes('增强')) {
+      throw new Error('增强模式界面状态未生效')
+    }
+    const latestDepth = history.list(10)[0]?.depth
+    if (latestDepth !== 'deep') throw new Error('增强模式未写入历史记录')
+    console.log('SELFTEST_DEPTH', JSON.stringify({ active: depthUi.active, depth: latestDepth }))
+    await captureWindow(windows.panel, join(outDir, 'panel-deep.png'))
+
+    windows.closePanel()
+    settings.update({ answerDepth: 'standard' })
+
     settings.update({ maxChars: 100 })
     handleSelection({
       text: '这是一段用来验证截断提示的长文字。'.repeat(8),

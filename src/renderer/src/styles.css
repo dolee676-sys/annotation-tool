@@ -343,6 +343,89 @@ button {
   font-size: 10px;
 }
 
+.icon-btn.depth.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.icon-btn.domain.active {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.domain-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--ok-soft);
+  color: var(--ok);
+  font-size: 10px;
+}
+
+.depth-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+}
+
+.depth-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.depth-options.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.depth-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ink-2);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.depth-option strong {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.depth-option span {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.depth-option:hover {
+  border-color: var(--accent);
+}
+
+.depth-option.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.depth-option.active span {
+  color: var(--ink-2);
+}
+
+@media (max-width: 720px) {
+  .depth-options,
+  .depth-options.two {
+    grid-template-columns: 1fr;
+  }
+}
+
 .chip:disabled {
   cursor: default;
   opacity: 0.75;

@@ -2,7 +2,9 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path'
 import {
   DEFAULT_PROMPT,
+  type AnswerDepth,
   type DetectedApp,
+  type DomainMode,
   type ProviderKind,
   type ProviderPatch,
   type ProviderView,
@@ -35,6 +37,10 @@ export interface StoredSettings {
   whitelist: string[]
   detectedApps: DetectedApp[]
   prompt: string
+  answerDepth: AnswerDepth
+  domainMode: DomainMode
+  programmingPrompt: string
+  techStack: string
   defaultProviderId: string
   defaultModel: string
   maxChars: number
@@ -92,6 +98,10 @@ function defaults(): StoredSettings {
     whitelist: [],
     detectedApps: [],
     prompt: DEFAULT_PROMPT,
+    answerDepth: 'standard',
+    domainMode: 'general',
+    programmingPrompt: '',
+    techStack: '',
     defaultProviderId: 'ollama',
     defaultModel: '',
     maxChars: 2000,
@@ -141,6 +151,21 @@ export class SettingsStore {
       const merged: StoredSettings = { ...defaults(), ...raw }
       if (!raw.language) merged.language = 'zh-CN'
       if (!raw.answerLanguage) merged.answerLanguage = 'auto'
+      if (
+        merged.answerDepth !== 'brief' &&
+        merged.answerDepth !== 'standard' &&
+        merged.answerDepth !== 'deep'
+      ) {
+        merged.answerDepth = 'standard'
+      }
+      if (merged.domainMode !== 'general' && merged.domainMode !== 'programming') {
+        merged.domainMode = 'general'
+      }
+      if (typeof merged.programmingPrompt !== 'string') merged.programmingPrompt = ''
+      if (merged.domainMode === 'programming' && !merged.programmingPrompt.trim()) {
+        merged.domainMode = 'general'
+      }
+      if (typeof merged.techStack !== 'string') merged.techStack = ''
       for (const provider of merged.providers) {
         if (typeof provider.priceIn !== 'number' || typeof provider.priceOut !== 'number') {
           const preset = PROVIDER_PRESETS.find((item) => item.id === provider.id)
@@ -292,6 +317,22 @@ export class SettingsStore {
       ).slice(0, 80)
     }
     if (typeof patch.prompt === 'string' && patch.prompt.trim()) next.prompt = patch.prompt.trim()
+    if (
+      patch.answerDepth === 'brief' ||
+      patch.answerDepth === 'standard' ||
+      patch.answerDepth === 'deep'
+    ) {
+      next.answerDepth = patch.answerDepth
+    }
+    if (patch.domainMode === 'general' || patch.domainMode === 'programming') {
+      next.domainMode = patch.domainMode
+    }
+    if (typeof patch.programmingPrompt === 'string') {
+      next.programmingPrompt = patch.programmingPrompt.trim().slice(0, 12000)
+    }
+    if (typeof patch.techStack === 'string') {
+      next.techStack = patch.techStack.trim().slice(0, 400)
+    }
     if (typeof patch.defaultProviderId === 'string') next.defaultProviderId = patch.defaultProviderId
     if (typeof patch.defaultModel === 'string' && patch.defaultModel.trim()) {
       next.defaultModel = patch.defaultModel.trim()

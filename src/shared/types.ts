@@ -2,6 +2,10 @@ import type { AnswerLanguageSetting, LanguageSetting, Locale } from './i18n'
 
 export type ProviderKind = 'ollama' | 'openai'
 
+export type AnswerDepth = 'brief' | 'standard' | 'deep'
+
+export type DomainMode = 'general' | 'programming'
+
 export interface ProviderView {
   id: string
   name: string
@@ -39,6 +43,10 @@ export interface SettingsView {
   whitelist: string[]
   detectedApps: DetectedApp[]
   prompt: string
+  answerDepth: AnswerDepth
+  domainMode: DomainMode
+  programmingPrompt: string
+  techStack: string
   defaultProviderId: string
   defaultModel: string
   maxChars: number
@@ -151,6 +159,8 @@ export interface PanelInit {
   providerName: string
   model: string
   options: PanelModelOption[]
+  depth: AnswerDepth
+  domain: DomainMode
   localOnly: boolean
   contextChars: number
   contextEnabled: boolean
@@ -188,6 +198,8 @@ export interface HistoryRecord {
   question?: string
   answer: string
   contextChars?: number
+  depth?: AnswerDepth
+  domain?: DomainMode
   totalTokens: number
   cost: number
   ok: boolean
@@ -219,6 +231,8 @@ export interface FavoriteRecord {
   title?: string
   answer: string
   contextChars?: number
+  depth?: AnswerDepth
+  domain?: DomainMode
   totalTokens: number
   cost: number
 }
@@ -256,6 +270,10 @@ export interface SettingsPatch {
   filterMode?: 'all' | 'whitelist'
   whitelist?: string[]
   prompt?: string
+  answerDepth?: AnswerDepth
+  domainMode?: DomainMode
+  programmingPrompt?: string
+  techStack?: string
   defaultProviderId?: string
   defaultModel?: string
   maxChars?: number

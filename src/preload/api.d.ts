@@ -1,6 +1,8 @@
 import type {
+  AnswerDepth,
   AppEntry,
   AppState,
+  DomainMode,
   FavoriteRecord,
   FavoriteToggleResult,
   HistoryCompressProgress,
@@ -27,6 +29,8 @@ export interface PanelReset {
   providerId: string
   providerName: string
   model: string
+  depth: AnswerDepth
+  domain: DomainMode
   localOnly: boolean
 }
 
@@ -60,6 +64,8 @@ export interface ZhujieApi {
   panelReady(): Promise<boolean>
   panelClose(): Promise<boolean>
   panelRegenerate(): Promise<boolean>
+  panelSetDepth(depth: AnswerDepth): Promise<boolean>
+  panelSetDomain(domain: DomainMode): Promise<boolean>
   panelAsk(question: string): Promise<boolean>
   panelFavorite(): Promise<FavoriteToggleResult>
   panelSetPinned(pinned: boolean): Promise<boolean>
@@ -73,6 +79,9 @@ export interface ZhujieApi {
   on(channel: 'panel:init', callback: (payload: PanelInit) => void): () => void
   on(channel: 'panel:reset', callback: (payload: PanelReset) => void): () => void
   on(channel: 'panel:context', callback: (payload: PanelContext) => void): () => void
+  on(channel: 'panel:depth', callback: (payload: { depth: AnswerDepth }) => void): () => void
+  on(channel: 'panel:domain', callback: (payload: { domain: DomainMode }) => void): () => void
+  on(channel: 'panel:replace', callback: (payload: { text: string }) => void): () => void
   on(channel: 'panel:delta', callback: (payload: { chunk: string }) => void): () => void
   on(channel: 'panel:done', callback: (payload: PanelDone) => void): () => void
   on(channel: 'panel:error', callback: (payload: PanelError) => void): () => void

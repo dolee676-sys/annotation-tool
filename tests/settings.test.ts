@@ -35,7 +35,23 @@ test('旧设置迁移为中文，新设置跟随系统语言', () => {
     const fresh = new SettingsStore(dir)
     assert.equal(fresh.get().language, 'system')
     assert.equal(fresh.get().answerLanguage, 'auto')
+    assert.equal(fresh.get().answerDepth, 'standard')
+    assert.equal(fresh.get().domainMode, 'general')
+    assert.equal(fresh.get().programmingPrompt, '')
+    assert.equal(fresh.get().techStack, '')
     assert.equal(fresh.get().prompt.length > 0, true)
+
+    fresh.update({ answerDepth: 'deep' })
+    assert.equal(fresh.get().answerDepth, 'deep')
+    fresh.update({ answerDepth: 'standard' })
+    assert.equal(fresh.get().answerDepth, 'standard')
+
+    fresh.update({ domainMode: 'programming', techStack: '  Java 21 + Spring Boot 3.4  ' })
+    assert.equal(fresh.get().domainMode, 'programming')
+    assert.equal(fresh.get().techStack, 'Java 21 + Spring Boot 3.4')
+
+    fresh.update({ programmingPrompt: '  CUSTOM_PROGRAMMING_PROMPT  ' })
+    assert.equal(fresh.get().programmingPrompt, 'CUSTOM_PROGRAMMING_PROMPT')
 
     const file = join(dir, 'settings.json')
     const raw = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>

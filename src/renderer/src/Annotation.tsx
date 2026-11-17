@@ -1,7 +1,7 @@
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { PanelDone, PanelInit, PanelMode } from '../../shared/types'
+import type { AnswerDepth, DomainMode, PanelDone, PanelInit, PanelMode } from '../../shared/types'
 import { formatCny, formatUsageMultiplier } from '../../shared/pricing'
 import { modelDisplayName } from '../../shared/modelCatalog'
 import { translate, type Locale } from '../../shared/i18n'
@@ -68,6 +68,8 @@ interface ResetPayload {
   providerId: string
   providerName: string
   model: string
+  depth: AnswerDepth
+  domain: DomainMode
   localOnly: boolean
 }
 
@@ -102,6 +104,8 @@ export function Panel(): JSX.Element {
   const [init, setInit] = useState<PanelInit | null>(null)
   const [mode, setMode] = useState<PanelMode>('annotate')
   const [model, setModel] = useState('')
+  const [depth, setDepth] = useState<AnswerDepth>('standard')
+  const [domain, setDomain] = useState<DomainMode>('general')
   const [initialAnswer, setInitialAnswer] = useState('')
   const [initialStatus, setInitialStatus] = useState<Status>('waiting')
   const [initialError, setInitialError] = useState('')
@@ -125,6 +129,8 @@ export function Panel(): JSX.Element {
       setInit(payload)
       setMode(payload.mode)
       setModel(payload.model)
+      setDepth(payload.depth ?? 'standard')
+      setDomain(payload.domain ?? 'general')
       setInitialAnswer('')
       setInitialError('')
       setInitialMeta(null)
@@ -140,6 +146,8 @@ export function Panel(): JSX.Element {
     const offReset = window.zhujie.on('panel:reset', (payload: ResetPayload) => {
       setMode(payload.mode)
       setModel(payload.model)
+      if (payload.depth) setDepth(payload.depth)
+      if (payload.domain) setDomain(payload.domain)
       setInitialError('')
       setFavorited(false)
       setFavoriteError('')
@@ -169,6 +177,26 @@ export function Panel(): JSX.Element {
     })
     const offContext = window.zhujie.on('panel:context', (payload) => {
       setInit((prev) => (prev ? { ...prev, ...payload } : prev))
+    })
+    const offDepth = window.zhujie.on('panel:depth', ({ depth: next }) => {
+      setDepth(next)
+    })
+    const offDomain = window.zhujie.on('panel:domain', ({ domain: next }) => {
+      setDomain(next)
+    })
+    const offReplace = window.zhujie.on('panel:replace', ({ text }) => {
+      if (target.current === 'followup') {
+        setFollowUps((prev) => {
+          if (prev.length === 0) return prev
+          const next = [...prev]
+          const last = { ...next[next.length - 1] }
+          last.answer = text
+          next[next.length - 1] = last
+          return next
+        })
+      } else {
+        setInitialAnswer(text)
+      }
     })
     const offDelta = window.zhujie.on('panel:delta', ({ chunk }: { chunk: string }) => {
       if (target.current === 'followup') {
@@ -234,6 +262,9 @@ export function Panel(): JSX.Element {
       offInit()
       offReset()
       offContext()
+      offDepth()
+      offDomain()
+      offReplace()
       offDelta()
       offDone()
       offError()
@@ -387,6 +418,43 @@ export function Panel(): JSX.Element {
           </div>
         </div>
         <div className="panel-actions">
+          <button
+            className={domain === 'programming' ? 'icon-btn domain active' : 'icon-btn domain'}
+            title={
+              domain === 'programming'
+                ? t('关闭编程模式，回到通用')
+                : t('编程模式：使用你在设置里写的编程模式提示词')
+            }
+            aria-pressed={domain === 'programming'}
+            disabled={busy || contextPending}
+            onClick={() =>
+              void window.zhujie.panelSetDomain(
+                domain === 'programming' ? 'general' : 'programming'
+              )
+            }
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8.5 7.5L4 12l4.5 4.5" />
+              <path d="M15.5 7.5L20 12l-4.5 4.5" />
+              <path d="M13.5 5l-3 14" />
+            </svg>
+          </button>
+          <button
+            className={depth === 'deep' ? 'icon-btn depth active' : 'icon-btn depth'}
+            title={
+              depth === 'deep'
+                ? t('关闭增强理解，回到标准')
+                : t('增强理解：扩大上下文，按六段式深解')
+            }
+            aria-pressed={depth === 'deep'}
+            disabled={busy || contextPending}
+            onClick={() => void window.zhujie.panelSetDepth(depth === 'deep' ? 'standard' : 'deep')}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round">
+              <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" />
+              <path d="M18.4 15.2l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7.7-2z" />
+            </svg>
+          </button>
           <select
             className="model-select"
             value={selectedValue}
@@ -635,6 +703,8 @@ export function Panel(): JSX.Element {
           </span>
         )}
         {init && init.contextChars > 0 && <span className="context-badge">{t('结合上下文')}</span>}
+        {domain === 'programming' && <span className="domain-badge">{t('编程')}</span>}
+        {depth === 'deep' && <span className="depth-badge">{t('增强')}</span>}
         {pinnedOpen && <span className="pin-badge">{t('已钉住')}</span>}
         {init?.localOnly && <span className="local-badge">{t('仅本机')}</span>}
       </footer>

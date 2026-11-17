@@ -8,6 +8,10 @@ export interface ChatOptions {
   user: string
   signal: AbortSignal
   onDelta: (text: string) => void
+  maxTokens?: number
+  temperature?: number
+  numCtx?: number
+  timeoutMs?: number
 }
 
 export interface ChatResult {
@@ -16,6 +20,7 @@ export interface ChatResult {
   completionTokens: number
   totalTokens: number
   estimated: boolean
+  finishReason: string | null
 }
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]', '0.0.0.0'])
@@ -106,7 +111,11 @@ async function chatOllama(options: ChatOptions): Promise<ChatResult> {
         { role: 'system', content: options.system },
         { role: 'user', content: options.user }
       ],
-      options: { temperature: 0.2, num_predict: 700 }
+      options: {
+        temperature: options.temperature ?? 0.2,
+        num_predict: options.maxTokens ?? 700,
+        ...(options.numCtx ? { num_ctx: options.numCtx } : {})
+      }
     })
   })
   if (!res.ok) throw new Error(await readError(res))
@@ -119,14 +128,17 @@ async function chatOllama(options: ChatOptions): Promise<ChatResult> {
   let promptTokens = 0
   let completionTokens = 0
   let gotUsage = false
+  let finishReason: string | null = null
+  let thinkingChars = 0
 
   const handleLine = (line: string): void => {
     const trimmed = line.trim()
     if (!trimmed) return
     let obj: {
       error?: string
-      message?: { content?: string }
+      message?: { content?: string; thinking?: string }
       done?: boolean
+      done_reason?: string
       prompt_eval_count?: number
       eval_count?: number
     }
@@ -136,6 +148,7 @@ async function chatOllama(options: ChatOptions): Promise<ChatResult> {
       return
     }
     if (obj.error) throw new Error(obj.error)
+    if (obj.message?.thinking) thinkingChars += obj.message.thinking.length
     if (obj.message?.content) {
       text += obj.message.content
       options.onDelta(obj.message.content)
@@ -144,6 +157,7 @@ async function chatOllama(options: ChatOptions): Promise<ChatResult> {
       promptTokens = obj.prompt_eval_count ?? 0
       completionTokens = obj.eval_count ?? 0
       gotUsage = promptTokens > 0 || completionTokens > 0
+      finishReason = obj.done_reason ?? 'stop'
     }
   }
 
@@ -161,7 +175,15 @@ async function chatOllama(options: ChatOptions): Promise<ChatResult> {
   buffer += decoder.decode()
   handleLine(buffer)
 
-  if (!text.trim()) throw new Error('模型没有返回可显示的内容')
+  if (!text.trim()) {
+    if (finishReason === 'length') {
+      throw new Error('模型把输出额度用完了（done_reason=length），没有返回正文；请提高输出上限或换用非推理模型。')
+    }
+    if (thinkingChars > 0) {
+      throw new Error('模型只返回了思考过程，没有返回最终回答；请换用非推理模型或提高输出上限。')
+    }
+    throw new Error('模型没有返回可显示的内容')
+  }
   if (!gotUsage) {
     const promptTokensEst = estimateTokens(`${options.system}\n${options.user}`)
     const completionTokensEst = estimateTokens(text)
@@ -170,7 +192,8 @@ async function chatOllama(options: ChatOptions): Promise<ChatResult> {
       promptTokens: promptTokensEst,
       completionTokens: completionTokensEst,
       totalTokens: promptTokensEst + completionTokensEst,
-      estimated: true
+      estimated: true,
+      finishReason
     }
   }
   return {
@@ -178,7 +201,8 @@ async function chatOllama(options: ChatOptions): Promise<ChatResult> {
     promptTokens,
     completionTokens,
     totalTokens: promptTokens + completionTokens,
-    estimated: false
+    estimated: false,
+    finishReason
   }
 }
 
@@ -191,8 +215,8 @@ async function chatOpenAI(options: ChatOptions): Promise<ChatResult> {
       model: options.model,
       stream: true,
       stream_options: { include_usage: true },
-      temperature: 0.2,
-      max_tokens: 700,
+      temperature: options.temperature ?? 0.2,
+      max_tokens: options.maxTokens ?? 700,
       messages: [
         { role: 'system', content: options.system },
         { role: 'user', content: options.user }
@@ -209,6 +233,8 @@ async function chatOpenAI(options: ChatOptions): Promise<ChatResult> {
   let promptTokens = 0
   let completionTokens = 0
   let gotUsage = false
+  let finishReason: string | null = null
+  let reasoningChars = 0
 
   const handleLine = (line: string): void => {
     const trimmed = line.trim()
@@ -217,7 +243,11 @@ async function chatOpenAI(options: ChatOptions): Promise<ChatResult> {
     if (!payload || payload === '[DONE]') return
     let obj: {
       error?: { message?: string }
-      choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }>
+      choices?: Array<{
+        delta?: { content?: string; reasoning_content?: string }
+        message?: { content?: string }
+        finish_reason?: string | null
+      }>
       usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null
     }
     try {
@@ -228,6 +258,8 @@ async function chatOpenAI(options: ChatOptions): Promise<ChatResult> {
     if (obj.error?.message) throw new Error(obj.error.message)
     const choice = obj.choices?.[0]
     const piece = choice?.delta?.content ?? choice?.message?.content ?? ''
+    if (choice?.delta?.reasoning_content) reasoningChars += choice.delta.reasoning_content.length
+    if (choice?.finish_reason) finishReason = choice.finish_reason
     if (piece) {
       text += piece
       options.onDelta(piece)
@@ -253,7 +285,15 @@ async function chatOpenAI(options: ChatOptions): Promise<ChatResult> {
   buffer += decoder.decode()
   handleLine(buffer)
 
-  if (!text.trim()) throw new Error('模型没有返回可显示的内容')
+  if (!text.trim()) {
+    if (finishReason === 'length') {
+      throw new Error('模型把输出额度用完了（finish_reason=length），没有返回正文；请提高输出上限或换用非推理模型。')
+    }
+    if (reasoningChars > 0) {
+      throw new Error('模型只返回了思考过程，没有返回最终回答；请换用非推理模型或提高输出上限。')
+    }
+    throw new Error('模型没有返回可显示的内容')
+  }
   if (!gotUsage) {
     const promptTokensEst = estimateTokens(`${options.system}\n${options.user}`)
     const completionTokensEst = estimateTokens(text)
@@ -262,7 +302,8 @@ async function chatOpenAI(options: ChatOptions): Promise<ChatResult> {
       promptTokens: promptTokensEst,
       completionTokens: completionTokensEst,
       totalTokens: promptTokensEst + completionTokensEst,
-      estimated: true
+      estimated: true,
+      finishReason
     }
   }
   return {
@@ -270,7 +311,8 @@ async function chatOpenAI(options: ChatOptions): Promise<ChatResult> {
     promptTokens,
     completionTokens,
     totalTokens: promptTokens + completionTokens,
-    estimated: false
+    estimated: false,
+    finishReason
   }
 }
 
@@ -280,16 +322,21 @@ export async function chat(options: ChatOptions): Promise<ChatResult> {
   if (options.signal.aborted) controller.abort()
   else options.signal.addEventListener('abort', onAbort, { once: true })
   let timedOut = false
+  const timeoutMs = options.timeoutMs ?? 120_000
   const timer = setTimeout(() => {
     timedOut = true
     controller.abort()
-  }, 120_000)
+  }, timeoutMs)
   try {
     const internal = { ...options, signal: controller.signal }
     if (options.provider.kind === 'ollama') return await chatOllama(internal)
     return await chatOpenAI(internal)
   } catch (error) {
-    if (timedOut) throw new Error('模型响应超时（120 秒），请确认本机模型仍在运行。')
+    if (timedOut) {
+      throw new Error(
+        `模型响应超时（${Math.max(1, Math.round(timeoutMs / 1000))} 秒），请确认本机模型仍在运行，或换用更快的模型。`
+      )
+    }
     throw error
   } finally {
     clearTimeout(timer)

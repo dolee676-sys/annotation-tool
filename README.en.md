@@ -48,7 +48,7 @@ Annotation focuses on the part of reading that takes the most effort: it sends m
 2. Extract the whole folder to any drive, for example `D:\Apps\zhujie`.
 3. Open the extracted `win-unpacked` folder and run `注解.exe` (the executable name is Chinese).
 4. If Windows SmartScreen says "Windows protected your PC", click **More info → Run anyway**. The build is currently unsigned; this warning is expected.
-5. The settings window opens on first launch. After closing it, the app stays in the system tray; double-click the tray icon to reopen it.
+5. The settings window opens on first launch. Click × to quit the app (─ minimizes). Selection annotation works while the app is running.
 6. Optional: right-click `注解.exe` → Send to → Desktop (create shortcut).
 
 Notes:

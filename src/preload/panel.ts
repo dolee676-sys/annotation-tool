@@ -4,6 +4,9 @@ const EVENT_CHANNELS = [
   'panel:init',
   'panel:reset',
   'panel:context',
+  'panel:depth',
+  'panel:domain',
+  'panel:replace',
   'panel:delta',
   'panel:done',
   'panel:error'
@@ -16,6 +19,10 @@ const api = {
   panelReady: () => ipcRenderer.invoke('panel:ready'),
   panelClose: () => ipcRenderer.invoke('panel:close'),
   panelRegenerate: () => ipcRenderer.invoke('panel:regenerate'),
+  panelSetDepth: (depth: 'brief' | 'standard' | 'deep') =>
+    ipcRenderer.invoke('panel:set-depth', depth),
+  panelSetDomain: (domain: 'general' | 'programming') =>
+    ipcRenderer.invoke('panel:set-domain', domain),
   panelAsk: (question: string) => ipcRenderer.invoke('panel:ask', question),
   panelFavorite: () => ipcRenderer.invoke('panel:favorite'),
   panelSetPinned: (pinned: boolean) => ipcRenderer.invoke('panel:pin', pinned),

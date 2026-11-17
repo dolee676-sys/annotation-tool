@@ -213,6 +213,8 @@ export function App(): JSX.Element {
   const [appInput, setAppInput] = useState('')
   const [promptDraft, setPromptDraft] = useState('')
   const [promptDirty, setPromptDirty] = useState(false)
+  const [programmingPromptDraft, setProgrammingPromptDraft] = useState('')
+  const [programmingPromptDirty, setProgrammingPromptDirty] = useState(false)
   const [tests, setTests] = useState<Record<string, TestState>>({})
   const [editor, setEditor] = useState<EditorState | null>(null)
   const [savingProvider, setSavingProvider] = useState(false)
@@ -375,6 +377,7 @@ export function App(): JSX.Element {
       setState(next)
       setUsage(nextUsage)
       setPromptDraft(promptForLocale(next.settings.prompt, next.locale))
+      setProgrammingPromptDraft(next.settings.programmingPrompt ?? '')
     })()
     const offState = window.zhujie.on('state:changed', (next: AppState) => setState(next))
     const offUsage = window.zhujie.on('usage:changed', () => {
@@ -391,6 +394,12 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (state && !promptDirty) setPromptDraft(promptForLocale(state.settings.prompt, state.locale))
   }, [state, promptDirty])
+
+  useEffect(() => {
+    if (state && !programmingPromptDirty) {
+      setProgrammingPromptDraft(state.settings.programmingPrompt ?? '')
+    }
+  }, [state, programmingPromptDirty])
 
   useEffect(() => {
     if (!state || tabInitialized) return
@@ -434,6 +443,20 @@ export function App(): JSX.Element {
     }
     await patch({ prompt: promptDraft }, t('提示词已保存'))
     setPromptDirty(false)
+  }
+
+  const saveProgrammingPrompt = async (): Promise<void> => {
+    await patch(
+      { programmingPrompt: programmingPromptDraft },
+      t('编程模式提示词已保存')
+    )
+    setProgrammingPromptDirty(false)
+  }
+
+  const clearProgrammingPrompt = async (): Promise<void> => {
+    setProgrammingPromptDraft('')
+    setProgrammingPromptDirty(false)
+    await patch({ programmingPrompt: '' }, t('编程模式提示词已清空'))
   }
 
   const saveProvider = async (): Promise<void> => {
@@ -1691,6 +1714,68 @@ export function App(): JSX.Element {
 
               <div className="panel-card">
                 <div className="card-head">
+                  <h2>{t('解释深度')}</h2>
+                  <span className="muted">{t('默认用于新的注解和提问')}</span>
+                </div>
+                <p className="muted">
+                  {t('增强模式会读取更大范围的上下文（需开启「结合上下文」），并按「结论 → 语境 → 背景 → 作用 → 易误点 → 文中依据」讲解；更慢，也更费 token。面板上可随时一键切换当前会话。')}
+                </p>
+                <div className="depth-options">
+                  {(['brief', 'standard', 'deep'] as const).map((value) => (
+                    <button
+                      key={value}
+                      className={
+                        settings.answerDepth === value ? 'depth-option active' : 'depth-option'
+                      }
+                      aria-pressed={settings.answerDepth === value}
+                      onClick={() => void patch({ answerDepth: value })}
+                    >
+                      <strong>
+                        {value === 'brief' ? t('简明') : value === 'standard' ? t('标准') : t('增强')}
+                      </strong>
+                      <span>
+                        {value === 'brief'
+                          ? t('只给结论和关键解释，约 150 字。')
+                          : value === 'standard'
+                            ? t('词义 → 语境 → 作用，约 300 字。')
+                            : t('扩大上下文，六段式深解，约 500–800 字。')}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="panel-card">
+                <div className="card-head">
+                  <h2>{t('领域模式')}</h2>
+                  <span className="muted">{t('默认用于新的注解和提问')}</span>
+                </div>
+                <p className="muted">
+                  {t('编程模式使用下方单独的「编程模式提示词」，不会叠加通用提示词；留空则回退到通用提示词。')}
+                </p>
+                <div className="depth-options two">
+                  {(['general', 'programming'] as const).map((value) => (
+                    <button
+                      key={value}
+                      className={
+                        settings.domainMode === value ? 'depth-option active' : 'depth-option'
+                      }
+                      aria-pressed={settings.domainMode === value}
+                      onClick={() => void patch({ domainMode: value })}
+                    >
+                      <strong>{value === 'general' ? t('通用') : t('编程')}</strong>
+                      <span>
+                        {value === 'general'
+                          ? t('普通文章、概念和日常阅读。')
+                          : t('使用下面独立的编程模式提示词。')}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="panel-card">
+                <div className="card-head">
                   <h2>{t('系统提示词')}</h2>
                   <span className="muted">{t('{count} 字', { count: promptDraft.length })}</span>
                 </div>
@@ -1705,7 +1790,7 @@ export function App(): JSX.Element {
                 />
                 <div className="prompt-foot">
                   <span className="muted">
-                    {t('建议保留“Markdown / 300 字以内”之类的约束，面板显示更稳定。')}
+                    {t('建议保留 Markdown 约束；字数上限只影响简明/标准模式，「增强」会自动放开。')}
                   </span>
                   <div className="head-actions">
                     <button
@@ -1721,6 +1806,43 @@ export function App(): JSX.Element {
                       className="primary"
                       disabled={!promptDirty}
                       onClick={() => void savePrompt()}
+                    >
+                      {t('保存')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="panel-card">
+                <div className="card-head">
+                  <h2>{t('编程模式提示词')}</h2>
+                  <span className="muted">
+                    {t('{count} 字', { count: programmingPromptDraft.length })}
+                  </span>
+                </div>
+                <p className="muted">
+                  {t('仅在领域模式选「编程」时使用；这里写什么就发什么，应用只额外加选中/上下文的边界标记和安全前缀。留空则使用通用提示词。')}
+                </p>
+                <textarea
+                  className="prompt-box"
+                  value={programmingPromptDraft}
+                  onChange={(event) => {
+                    setProgrammingPromptDraft(event.target.value)
+                    setProgrammingPromptDirty(true)
+                  }}
+                  placeholder={t('例如：你是一位资深技术专家。解释代码时按「结论 → 关键参数 → 运行机制 → 边界与坑 → 最小示例 → 怎么验证」回答；不得编造 API、签名、默认值或版本行为。')}
+                  spellCheck={false}
+                />
+                <div className="prompt-foot">
+                  <span className="muted">{t('留空 = 使用通用提示词。')}</span>
+                  <div className="head-actions">
+                    <button className="ghost" onClick={() => void clearProgrammingPrompt()}>
+                      {t('清空')}
+                    </button>
+                    <button
+                      className="primary"
+                      disabled={!programmingPromptDirty}
+                      onClick={() => void saveProgrammingPrompt()}
                     >
                       {t('保存')}
                     </button>
@@ -2028,6 +2150,12 @@ export function App(): JSX.Element {
                               {record.contextChars
                                 ? ` · ${t('结合上下文 {count} 字', { count: record.contextChars })}`
                                 : ''}
+                              {record.depth === 'deep'
+                                ? ` · ${t('增强')}`
+                                : record.depth === 'brief'
+                                  ? ` · ${t('简明')}`
+                                  : ''}
+                              {record.domain === 'programming' ? ` · ${t('编程')}` : ''}
                             </div>
                           </div>
                         )
@@ -2595,6 +2723,12 @@ function FavoriteCard({
             {favorite.contextChars
               ? ` · ${t('结合上下文 {count} 字', { count: favorite.contextChars })}`
               : ''}
+            {favorite.depth === 'deep'
+              ? ` · ${t('增强')}`
+              : favorite.depth === 'brief'
+                ? ` · ${t('简明')}`
+                : ''}
+            {favorite.domain === 'programming' ? ` · ${t('编程')}` : ''}
             <span className="favorite-spacer" />
             <button className="link" onClick={() => void copy()}>
               {copied ? t('已复制') : t('复制回答')}
