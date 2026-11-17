@@ -1,8 +1,8 @@
 {
-  "versionCode": 1023,
-  "versionName": "0.1.45",
-  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.45.apk",
-  "sha256": "a379fc18bdf812053f4a2586ec432082624f82558a84142eb321fd166bf58dce",
+  "versionCode": 1024,
+  "versionName": "0.1.46",
+  "url": "https://raw.githubusercontent.com/dolee676-sys/annotation-tool/main/android-release/zhujie-tablet-0.1.46.apk",
+  "sha256": "a09167949e6e726d3a892952cc287be8f0a4c519cc8d7f656df167fedcf7570d",
   "size": 268299,
-  "notes": "修复：钉住后仍能在面板输入框正常打字追问（上版把钉住设成不可聚焦导致输入失效）。"
+  "notes": "修复：钉住面板后把键盘焦点交还文档，可以在文档里直接打字；只有点面板提问栏时才重新弹出键盘。"
 }

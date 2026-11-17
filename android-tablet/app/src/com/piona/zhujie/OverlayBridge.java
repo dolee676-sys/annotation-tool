@@ -36,11 +36,14 @@ public class OverlayBridge {
     private final PanelMover mover;
     private final PinnedAction pinnedAction;
     private final SelectionAction selectionAction;
+    private final Runnable focusInputAction;
+    private final Runnable releaseInputAction;
     private final Handler main = new Handler(Looper.getMainLooper());
 
     public OverlayBridge(Context context, WebView web, String text, String selectionContext,
                          boolean askMode, Runnable closeAction, PanelMover mover,
-                         PinnedAction pinnedAction, SelectionAction selectionAction) {
+                         PinnedAction pinnedAction, SelectionAction selectionAction,
+                         Runnable focusInputAction, Runnable releaseInputAction) {
         this.context = context;
         this.web = web;
         this.text = text == null ? "" : text;
@@ -50,6 +53,8 @@ public class OverlayBridge {
         this.mover = mover;
         this.pinnedAction = pinnedAction;
         this.selectionAction = selectionAction;
+        this.focusInputAction = focusInputAction;
+        this.releaseInputAction = releaseInputAction;
     }
 
     @JavascriptInterface
@@ -151,6 +156,22 @@ public class OverlayBridge {
     public void setPinned(boolean pinned) {
         if (pinnedAction != null) {
             main.post(() -> pinnedAction.setPinned(pinned));
+        }
+    }
+
+    /** 点面板提问栏时调用：重新让面板可聚焦并弹键盘。 */
+    @JavascriptInterface
+    public void focusPanelInput() {
+        if (focusInputAction != null) {
+            main.post(focusInputAction);
+        }
+    }
+
+    /** 点面板外部或输入框失焦时调用：把键盘交还下层应用。 */
+    @JavascriptInterface
+    public void releasePanelInput() {
+        if (releaseInputAction != null) {
+            main.post(releaseInputAction);
         }
     }
 

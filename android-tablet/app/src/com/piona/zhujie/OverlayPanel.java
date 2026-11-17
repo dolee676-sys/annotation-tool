@@ -1,6 +1,7 @@
 package com.piona.zhujie;
 
 import android.accessibilityservice.AccessibilityService;
+import android.content.Context;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
@@ -11,6 +12,7 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.widget.FrameLayout;
@@ -68,12 +70,87 @@ public class OverlayPanel {
     }
 
     /**
-     * 钉住只影响「点外部是否关闭」。焦点保持可聚焦——否则输入框收不到键盘，
-     * 追问就打不了字（曾因钉住加 FLAG_NOT_FOCUSABLE 导致输入失效）。
-     * 想在下层应用打字（如 OneNote 回车）时，先点一下下层应用让它拿回焦点。
+     * 钉住只影响「点外部是否关闭」。焦点规则：
+     * - 钉住时立即把键盘焦点交还下层应用（面板窗口加 FLAG_NOT_FOCUSABLE），
+     *   这样在文档里点光标就能直接打字；
+     * - 只有点面板里的提问栏时，才重新让面板可聚焦并弹出键盘；
+     * - 点面板外部时再次交还焦点。
      */
     public void setPinned(boolean pinned) {
         panelPinned = pinned;
+        if (pinned) {
+            releaseInputFocus();
+        } else {
+            setPanelFocusable(true);
+        }
+    }
+
+    /** 点提问栏时调用：重新让面板可聚焦，并聚焦输入框、弹出键盘。 */
+    public void requestInputFocus() {
+        if (!panelPinned || panelWeb == null || panelRoot == null) return;
+        setPanelFocusable(true);
+        panelRoot.requestFocus();
+        panelWeb.requestFocus();
+        panelWeb.postDelayed(() -> {
+            WebView web = panelWeb;
+            if (web == null) return;
+            try {
+                web.evaluateJavascript(
+                        "(function(){var i=document.getElementById('input');if(i){i.focus();}})();",
+                        null);
+            } catch (Exception ignored) {
+            }
+            InputMethodManager imm = (InputMethodManager) service.getSystemService(
+                    Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showSoftInput(web, InputMethodManager.SHOW_IMPLICIT);
+            }
+        }, 60);
+    }
+
+    /**
+     * 把键盘焦点交还下层应用：清掉 WebView 输入焦点、收起键盘；钉住时
+     * 同时给面板窗口加 FLAG_NOT_FOCUSABLE，让文档真正拿到键盘。
+     */
+    public void releaseInputFocus() {
+        WebView web = panelWeb;
+        if (web != null) {
+            View focused = web.findFocus();
+            if (focused != null) focused.clearFocus();
+            web.clearFocus();
+            try {
+                web.evaluateJavascript(
+                        "(function(){var a=document.activeElement;if(a&&a.blur)a.blur();})();",
+                        null);
+            } catch (Exception ignored) {
+            }
+            InputMethodManager imm = (InputMethodManager) service.getSystemService(
+                    Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                try {
+                    imm.hideSoftInputFromWindow(web.getWindowToken(), 0);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        if (panelPinned) setPanelFocusable(false);
+    }
+
+    private void setPanelFocusable(boolean focusable) {
+        FrameLayout root = panelRoot;
+        WindowManager.LayoutParams params = panelParams;
+        if (root == null || params == null || windowManager == null) return;
+        boolean currently = (params.flags & WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) == 0;
+        if (currently == focusable) return;
+        if (focusable) {
+            params.flags &= ~WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+        } else {
+            params.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+        }
+        try {
+            windowManager.updateViewLayout(root, params);
+        } catch (Exception ignored) {
+        }
     }
 
     public void show(String text, String context, boolean ask, Rect bounds, boolean capture) {
@@ -136,6 +213,8 @@ public class OverlayPanel {
         panelWeb.setWebViewClient(new SafeWebViewClient(service));
         panelWeb.setOnTouchListener((view, event) -> {
             if (event.getActionMasked() == MotionEvent.ACTION_OUTSIDE) {
+                if (selectionActive) return false;
+                releaseInputFocus();
                 if (!panelPinned && !selectionActive) {
                     close();
                     return true;
@@ -147,7 +226,8 @@ public class OverlayPanel {
         panelWeb.addJavascriptInterface(
                 new OverlayBridge(service, panelWeb, text, context, ask, this::close,
                         this::move, this::setPinned,
-                        this::setSelectionActive),
+                        this::setSelectionActive,
+                        this::requestInputFocus, this::releaseInputFocus),
                 "AndroidBridge");
         panelWeb.loadUrl(capture
                 ? "file:///android_asset/capture.html"
@@ -170,6 +250,8 @@ public class OverlayPanel {
             @Override
             public boolean dispatchTouchEvent(MotionEvent event) {
                 if (event.getActionMasked() == MotionEvent.ACTION_OUTSIDE) {
+                    if (selectionActive) return false;
+                    releaseInputFocus();
                     if (!panelPinned && !selectionActive) {
                         close();
                         return true;

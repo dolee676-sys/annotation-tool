@@ -440,11 +440,32 @@
     $('#pin').addEventListener('click', function () {
       state.pinned = !state.pinned;
       C.invoke('setPinned', state.pinned);
+      if (state.pinned) {
+        try {
+          if (document.activeElement && document.activeElement.blur) {
+            document.activeElement.blur();
+          }
+        } catch (exception) {
+        }
+      }
       var button = $('#pin');
       button.classList.toggle('active', state.pinned);
       button.setAttribute('aria-pressed', state.pinned ? 'true' : 'false');
-      button.title = state.pinned ? '已钉住：点外部不关闭（点此取消钉住）' : '钉在当前屏幕上';
+      button.title = state.pinned
+        ? '已钉住：点文档可直接编辑，点提问栏才用键盘（点此取消钉住）'
+        : '钉在当前屏幕上';
     });
+
+    var input = $('#input');
+    var requestPanelKeyboard = function () {
+      if (!state.pinned) return;
+      try {
+        C.invoke('focusPanelInput');
+      } catch (exception) {
+      }
+    };
+    input.addEventListener('touchstart', requestPanelKeyboard, { passive: true });
+    input.addEventListener('mousedown', requestPanelKeyboard);
   }
 
   function updateMultiplier(model) {
