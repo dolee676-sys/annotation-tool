@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>注解 · 划词 AI 注解助手</title>
+  <meta name="description" content="选中一段文字，结合它所在的段落，给出词义、语境和作用的讲解，或直接向 AI 提问。">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="seal">注</span><div><b>注解</b><small>划词 AI 阅读助手</small></div></div>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="主导航">
+      <button class="on" data-tab="read" role="tab" aria-selected="true">阅读</button>
+      <button data-tab="records" role="tab" aria-selected="false">记录</button>
+      <button data-tab="settings" role="tab" aria-selected="false">设置</button>
+    </nav>
+    <span class="model-chip" id="modelChip">演示模式</span>
+  </header>
+
+  <main>
+    <section class="view on" id="view-read">
+      <div class="reader-home" id="readerHome">
+        <h1>把要读的文字放进来</h1>
+        <p class="muted">粘贴一篇文章、笔记或代码；在文中选中任意文字，点「注」看讲解，点「问」直接提问。</p>
+        <textarea id="pasteBox" placeholder="粘贴文章、笔记或代码…"></textarea>
+        <div class="row">
+          <button class="btn primary" id="startRead">开始阅读</button>
+          <button class="btn" id="loadSample">载入示例</button>
+          <button class="btn ghost" id="openSettings">配置模型</button>
+        </div>
+      </div>
+
+      <div class="reader-main" id="readerMain" hidden>
+        <div class="reader-bar">
+          <button class="btn ghost small" id="backHome">‹ 返回</button>
+          <span class="doc-title" id="docTitle">阅读</span>
+          <span class="muted small" id="docMeta"></span>
+        </div>
+        <article class="doc" id="doc"></article>
+      </div>
+
+      <aside class="panel" id="panel" hidden aria-label="注解面板">
+        <div class="panel-head">
+          <span class="pane-icon" id="panelIcon">注</span>
+          <div class="pane-title"><b id="panelTitle">注解</b><small id="panelSub">结合当前段落</small></div>
+          <span class="model-chip small" id="panelModel">—</span>
+          <button class="icon-btn" id="panelClose" aria-label="关闭">×</button>
+        </div>
+        <div class="panel-body" id="panelBody">
+          <div class="quote" id="panelQuote"></div>
+          <div class="thread" id="panelThread"></div>
+          <div class="empty" id="panelEmpty">选中文字已带上，直接问你想知道的。</div>
+          <div class="error" id="panelError" hidden></div>
+        </div>
+        <div class="panel-foot">
+          <button class="btn small" id="copyBtn">复制</button>
+          <span class="spacer"></span>
+          <span class="usage small muted" id="panelUsage"></span>
+        </div>
+        <div class="composer">
+          <input id="panelInput" type="text" placeholder="就这段文字提问…" autocomplete="off">
+          <button class="btn primary small" id="panelSend">发送</button>
+        </div>
+      </aside>
+    </section>
+
+    <section class="view" id="view-records">
+      <div class="records">
+        <div class="records-head"><h1>记录</h1>
+          <div class="seg" id="recSeg" role="group" aria-label="记录类型">
+            <button class="on" data-rec="history" aria-pressed="true">历史</button>
+            <button data-rec="favorites" aria-pressed="false">收藏</button>
+            <button data-rec="usage" aria-pressed="false">用量</button>
+          </div>
+        </div>
+        <div id="recBody"></div>
+      </div>
+    </section>
+
+    <section class="view" id="view-settings">
+      <div class="settings">
+        <div class="settings-inner">
+          <div class="seg settings-seg" id="setSeg" role="group" aria-label="设置分类">
+            <button class="on" data-set="model">模型</button>
+            <button data-set="data">数据</button>
+          </div>
+          <div class="set-group on" id="set-model">
+            <div class="card">
+              <h2>模型服务</h2>
+              <p class="muted">「演示模式」无需 Key，可直接体验完整流程；「真实模式」会在浏览器里直连你填的 OpenAI 兼容接口（需该接口允许跨域，Key 只存本机）。</p>
+              <div class="seg mode-seg" id="modeSeg" role="group" aria-label="运行模式">
+                <button class="on" data-mode="demo">演示模式</button>
+                <button data-mode="real">真实模式</button>
+              </div>
+              <label class="field"><span>服务商</span><select id="providerSel"></select></label>
+              <label class="field"><span>模型</span><input id="modelInput" type="text" spellcheck="false" placeholder="例如 deepseek-chat"></label>
+              <label class="field"><span>接口地址（OpenAI 兼容，通常以 /v1 结尾）</span><input id="baseUrlInput" type="text" spellcheck="false" placeholder="https://api.deepseek.com/v1"></label>
+              <label class="field"><span>API Key（只存本机浏览器）</span><input id="keyInput" type="password" autocomplete="off" placeholder="sk-..."></label>
+              <div class="row"><button class="btn primary" id="saveSettings">保存</button><button class="btn" id="testKey">测试连接</button><span class="small muted" id="testStatus" role="status" aria-live="polite"></span></div>
+            </div>
+          </div>
+          <div class="set-group" id="set-data">
+            <div class="card">
+              <h2>数据与隐私</h2>
+              <p class="muted">历史、收藏、用量和 Key 只保存在这台设备的浏览器里（localStorage），不上传到作者服务器；提问时选中的文字与上下文会发给你配置的模型服务商。</p>
+              <div class="row"><button class="btn danger" id="clearData">清空历史、收藏与用量</button></div>
+            </div>
+            <div class="card about">
+              <h2>关于</h2>
+              <p class="muted">注解 · Web 版。选中文字，结合上下文给出「词义 → 语境 → 作用」的讲解，或直接向 AI 提问。</p>
+              <p class="muted">制作：piona · 2026 Qoder 高校创造力大赛</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="sel-toolbar" id="selToolbar" hidden>
+    <button data-mode="annotate">注</button>
+    <button data-mode="ask">问</button>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
