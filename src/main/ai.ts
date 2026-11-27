@@ -113,7 +113,7 @@ async function chatOllama(options: ChatOptions): Promise<ChatResult> {
       ],
       options: {
         temperature: options.temperature ?? 0.2,
-        num_predict: options.maxTokens ?? 700,
+        num_predict: typeof options.maxTokens === 'number' ? options.maxTokens : -1,
         ...(options.numCtx ? { num_ctx: options.numCtx } : {})
       }
     })
@@ -216,7 +216,7 @@ async function chatOpenAI(options: ChatOptions): Promise<ChatResult> {
       stream: true,
       stream_options: { include_usage: true },
       temperature: options.temperature ?? 0.2,
-      max_tokens: options.maxTokens ?? 700,
+      ...(typeof options.maxTokens === 'number' ? { max_tokens: options.maxTokens } : {}),
       messages: [
         { role: 'system', content: options.system },
         { role: 'user', content: options.user }

@@ -22,8 +22,7 @@ import {
   buildCustomUserMessage,
   buildSystemPrompt,
   buildUserMessage,
-  markSelection,
-  scoreProgrammingStructure
+  markSelection
 } from './prompt'
 import { estimateCostCny, usageMultiplier } from '../shared/pricing'
 import { isFreeModel } from '../shared/presets'
@@ -91,7 +90,6 @@ const promptedUpdates = new Set<string>()
 interface ActiveSelection {
   text: string
   programName: string
-  truncated: boolean
   anchor: Point
   contextPoint: Point
   preferAbove: boolean
@@ -115,7 +113,6 @@ interface ActiveAnnotation {
   contextFull?: string
   text: string
   programName: string
-  truncated: boolean
   providerId: string
   model: string
   depth: AnswerDepth
@@ -315,8 +312,7 @@ function handleSelection(raw: RawSelection): void {
     return
   }
 
-  const truncated = rawText.length > s.maxChars
-  const text = truncated ? rawText.slice(0, s.maxChars) : rawText
+  const text = rawText
 
   let source: Point | null = null
   if (isUsablePoint(raw.mousePosEnd)) source = raw.mousePosEnd
@@ -341,7 +337,7 @@ function handleSelection(raw: RawSelection): void {
   const display = screen.getDisplayNearestPoint(anchor)
   const preferAbove = anchor.y > display.workArea.y + display.workArea.height - 220
 
-  activeSelection = { text, programName, truncated, anchor, contextPoint, preferAbove }
+  activeSelection = { text, programName, anchor, contextPoint, preferAbove }
   chipShowId += 1
   windows.showChip(anchor.x + 10, anchor.y + 8)
   debugSelection({
@@ -392,7 +388,6 @@ async function runAnnotationRequest(
     historyMode: PanelMode
     followUp: boolean
     question?: string
-    repairPrompt?: string
     locale?: Locale
   }
 ): Promise<void> {
@@ -437,18 +432,6 @@ async function runAnnotationRequest(
   const apiKey = settings.apiKey(provider.id)
   const depth = a.depth
   const domain = a.domain
-  const maxTokens =
-    domain === 'programming'
-      ? depth === 'deep'
-        ? 3200
-        : depth === 'brief'
-          ? 600
-          : 1200
-      : depth === 'deep'
-        ? 1400
-        : depth === 'brief'
-          ? 350
-          : 700
   const numCtx = domain === 'programming' || depth === 'deep' ? 8192 : undefined
   const timeoutMs =
     domain === 'programming'
@@ -469,7 +452,6 @@ async function runAnnotationRequest(
         system: options.system,
         user: options.user,
         signal: controller.signal,
-        maxTokens,
         temperature: 0.2,
         numCtx,
         timeoutMs,
@@ -500,7 +482,6 @@ async function runAnnotationRequest(
           '请直接输出最终回答，不要只输出思考过程；内容较长时优先保证完整。'
         )}`,
         signal: controller.signal,
-        maxTokens: Math.min(6000, Math.max(maxTokens * 2, depth === 'deep' ? 5000 : 3500)),
         temperature: 0.2,
         numCtx,
         timeoutMs: Math.max(timeoutMs, 180_000),
@@ -513,76 +494,13 @@ async function runAnnotationRequest(
     }
     if (activeAnnotation !== a || runId !== a.runId) return
 
-    let finalText = result.text
-    let promptTokens = result.promptTokens
-    let completionTokens = result.completionTokens
-    let totalTokens = result.totalTokens
-    let estimated = result.estimated
-    let repairApplied = false
-    let truncated = result.finishReason === 'length'
-    const beforeScore = scoreProgrammingStructure(finalText)
-    if (domain === 'programming' && depth === 'deep' && options.repairPrompt && (truncated || beforeScore < 6)) {
-      const repairMaxTokens = Math.min(
-        6000,
-        Math.max(maxTokens * 2, depth === 'deep' ? 5000 : 3500)
-      )
-      try {
-        const repair = await chat({
-          provider,
-          apiKey,
-          model: a.model,
-          system: `${options.system}\n\n${options.repairPrompt}`,
-          user: `${options.user}\n\n[PREVIOUS ANSWER]\n${finalText}`,
-          signal: controller.signal,
-          onDelta: () => undefined,
-          maxTokens: repairMaxTokens,
-          temperature: 0.2,
-          numCtx,
-          timeoutMs: Math.max(timeoutMs, 180_000)
-        })
-        promptTokens += repair.promptTokens
-        completionTokens += repair.completionTokens
-        totalTokens += repair.totalTokens
-        estimated = estimated || repair.estimated
-        const afterScore = scoreProgrammingStructure(repair.text)
-        const repairComplete = repair.finishReason !== 'length'
-        const shouldUseRepair =
-          (repairComplete && (afterScore >= beforeScore || afterScore === 6)) ||
-          (truncated &&
-            (afterScore > beforeScore ||
-              (afterScore === beforeScore && repair.text.length > finalText.length)))
-        if (shouldUseRepair) {
-          finalText = repair.text
-          repairApplied = true
-          truncated = repair.finishReason === 'length'
-        }
-      } catch (repairError) {
-        if (controller.signal.aborted || activeAnnotation !== a || runId !== a.runId) return
-        if (isSelftest) console.log('[selftest] repair failed', repairError)
-      }
-    }
-    let note = ''
-    if (truncated) {
-      note = `\n\n> ${translate(
-        options.locale ?? uiLocale(),
-        '本次回答仍被模型输出上限截断，建议换用输出上限更高的模型或降低深度。'
-      )}`
-    } else if (domain === 'programming' && depth === 'deep' && !repairApplied && beforeScore < 6) {
-      note = `\n\n> ${translate(
-        options.locale ?? uiLocale(),
-        '本次回答未能自动补全六步结构，建议换用更强的模型或重新生成。'
-      )}`
-    }
-    if (note) finalText += note
-    if (activeAnnotation !== a || runId !== a.runId) return
-    if (repairApplied || note) windows.sendPanel('panel:replace', { text: finalText })
-
+    const finalText = result.text
     a.pending = false
     const latencyMs = Date.now() - startedAt
     const cost = estimateCostCny({
       model: a.model,
-      promptTokens,
-      completionTokens,
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
       local: isLocalBaseUrl(provider.baseUrl),
       fallbackIn: provider.priceIn,
       fallbackOut: provider.priceOut,
@@ -595,7 +513,7 @@ async function runAnnotationRequest(
       answer: finalText,
       providerName: provider.name,
       model: a.model,
-      totalTokens,
+      totalTokens: result.totalTokens,
       cost
     })
     if (a.turns.length > 6) a.turns = a.turns.slice(-6)
@@ -609,10 +527,10 @@ async function runAnnotationRequest(
       model: a.model,
       chars: a.text.length,
       contextChars: a.context?.length ?? 0,
-      promptTokens,
-      completionTokens,
-      totalTokens,
-      estimated,
+      promptTokens: result.promptTokens,
+      completionTokens: result.completionTokens,
+      totalTokens: result.totalTokens,
+      estimated: result.estimated,
       cost,
       latencyMs,
       ok: true
@@ -632,7 +550,7 @@ async function runAnnotationRequest(
         contextChars: a.context?.length ?? 0,
         depth,
         domain,
-        totalTokens,
+        totalTokens: result.totalTokens,
         cost,
         ok: true
       })
@@ -640,15 +558,15 @@ async function runAnnotationRequest(
     }
     windows.sendPanel('panel:done', {
       usage: {
-        promptTokens,
-        completionTokens,
-        totalTokens,
-        estimated
+        promptTokens: result.promptTokens,
+        completionTokens: result.completionTokens,
+        totalTokens: result.totalTokens,
+        estimated: result.estimated
       },
       cost,
       latencyMs
     })
-    if (isSelftest) console.log('[selftest] panel:done', totalTokens)
+    if (isSelftest) console.log('[selftest] panel:done', result.totalTokens)
     windows.settings?.webContents.send('usage:changed')
     selftestResolve?.()
     selftestResolve = null
@@ -882,7 +800,6 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
     contextFull: undefined,
     text: sel.text,
     programName: sel.programName,
-    truncated: sel.truncated,
     providerId: provider.id,
     model,
     depth: s.answerDepth,
@@ -914,9 +831,7 @@ async function openAnnotationFromChip(mode: PanelMode): Promise<void> {
     localOnly: s.localOnly,
     contextChars: 0,
     contextEnabled: contextEligible,
-    contextPending: Boolean(contextPromise),
-    truncated: sel.truncated,
-    maxChars: s.maxChars
+    contextPending: Boolean(contextPromise)
   }
 
   pendingPanelInit = init
@@ -2154,34 +2069,6 @@ async function runSelfTest(): Promise<void> {
 
     windows.closePanel()
     settings.update({ answerDepth: 'standard' })
-
-    settings.update({ maxChars: 100 })
-    handleSelection({
-      text: '这是一段用来验证截断提示的长文字。'.repeat(8),
-      programName: '自测阅读器',
-      startTop: { x: 300, y: 300 },
-      startBottom: { x: 300, y: 330 },
-      endTop: { x: 700, y: 300 },
-      endBottom: { x: 700, y: 330 },
-      mousePosEnd: { x: 700, y: 330 },
-      posLevel: 3
-    })
-    await new Promise((r) => setTimeout(r, 500))
-    const truncChip = windows.chip
-    if (!truncChip) throw new Error('截断测试小框未创建')
-    const truncDone = waitForPanelDone()
-    truncChip.webContents.sendInputEvent({ type: 'mouseDown', x: 29, y: 22, button: 'left', clickCount: 1 })
-    truncChip.webContents.sendInputEvent({ type: 'mouseUp', x: 29, y: 22, button: 'left', clickCount: 1 })
-    await truncDone
-    await new Promise((r) => setTimeout(r, 350))
-    const truncWarn = await windows.panel?.webContents.executeJavaScript(
-      "document.querySelector('.quote-warn')?.textContent || ''"
-    )
-    if (!String(truncWarn).includes('已截断')) throw new Error('超长选中截断提示未显示')
-    console.log('SELFTEST_TRUNCATION', JSON.stringify({ warn: truncWarn }))
-    await captureWindow(windows.panel, join(outDir, 'panel-truncated.png'))
-    windows.closePanel()
-    settings.update({ maxChars: 2000 })
 
     const summary = usage.summary()
     writeFileSync(

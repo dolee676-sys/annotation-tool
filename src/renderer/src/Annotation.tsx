@@ -564,12 +564,6 @@ export function Panel(): JSX.Element {
           ) : (
             ''
           )}
-          {init?.truncated && (
-            <span className="quote-warn">
-              {' '}
-              {t(' · 已截断，仅发送前 {count} 字', { count: init.maxChars })}
-            </span>
-          )}
         </div>
         <p>{init?.text ?? ''}</p>
         {init?.text && init.text.length > 120 && <div className="quote-fade" aria-hidden="true" />}

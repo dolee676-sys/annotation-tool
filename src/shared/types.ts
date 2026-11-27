@@ -49,7 +49,6 @@ export interface SettingsView {
   techStack: string
   defaultProviderId: string
   defaultModel: string
-  maxChars: number
   launchAtLogin: boolean
   useContext: boolean
   contextChars: number
@@ -165,8 +164,6 @@ export interface PanelInit {
   contextChars: number
   contextEnabled: boolean
   contextPending: boolean
-  truncated: boolean
-  maxChars: number
 }
 
 export interface PanelContext {
@@ -276,7 +273,6 @@ export interface SettingsPatch {
   techStack?: string
   defaultProviderId?: string
   defaultModel?: string
-  maxChars?: number
   launchAtLogin?: boolean
   useContext?: boolean
   contextChars?: number

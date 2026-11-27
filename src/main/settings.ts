@@ -43,7 +43,6 @@ export interface StoredSettings {
   techStack: string
   defaultProviderId: string
   defaultModel: string
-  maxChars: number
   launchAtLogin: boolean
   useContext: boolean
   contextChars: number
@@ -104,7 +103,6 @@ function defaults(): StoredSettings {
     techStack: '',
     defaultProviderId: 'ollama',
     defaultModel: '',
-    maxChars: 2000,
     launchAtLogin: false,
     useContext: true,
     contextChars: 300,
@@ -336,9 +334,6 @@ export class SettingsStore {
     if (typeof patch.defaultProviderId === 'string') next.defaultProviderId = patch.defaultProviderId
     if (typeof patch.defaultModel === 'string' && patch.defaultModel.trim()) {
       next.defaultModel = patch.defaultModel.trim()
-    }
-    if (typeof patch.maxChars === 'number') {
-      next.maxChars = Math.min(20000, Math.max(100, Math.round(patch.maxChars)))
     }
     if (typeof patch.launchAtLogin === 'boolean') next.launchAtLogin = patch.launchAtLogin
     if (typeof patch.useContext === 'boolean') next.useContext = patch.useContext

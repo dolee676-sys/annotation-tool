@@ -1895,42 +1895,6 @@ export function App(): JSX.Element {
                 </div>
               </div>
 
-              <div className="panel-card">
-                <div className="card-head">
-                  <h2>{t('单次发送上限')}</h2>
-                  <span className="muted">
-                    {t('当前 {count} 字', { count: settings.maxChars })}
-                  </span>
-                </div>
-                <p className="muted">
-                  {t('选中文字超过上限时只发送前面的部分，注解面板会明确提示「已截断」，不会让你误以为整段都发送了。')}
-                </p>
-                <div className="context-length">
-                  <span>{t('最多')}</span>
-                  <input
-                    key={settings.maxChars}
-                    type="number"
-                    min="100"
-                    max="20000"
-                    step="100"
-                    defaultValue={settings.maxChars}
-                    onBlur={(event) => {
-                      const value = Number(event.target.value)
-                      void patch({
-                        maxChars:
-                          Number.isFinite(value) && value > 0
-                            ? Math.min(20000, Math.max(100, value))
-                            : 100
-                      })
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') event.currentTarget.blur()
-                    }}
-                  />
-                  <span>{t('字')}</span>
-                </div>
-              </div>
-
             </section>
           )}
 
